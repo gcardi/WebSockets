@@ -4,7 +4,9 @@ C++ Websockes implementation for RAD Studio modern compilers (bcc32c, bcc64) bas
 
 Put your certificate files (.crt, .pem, and .key) in the WebSockets/Demo/Resources/SSL/ folder to compile and run the Server Demo app, e.g.:
 
-ca.crt
-ca.key
-caRoot.pem
+{$PROJECTDIR}\Demo\Resources\SSL\ca.crt
+
+{$PROJECTDIR}\Demo\Resources\SSL\ca.key
+
+{$PROJECTDIR}\Demo\Resources\SSL\caRoot.pem
 
