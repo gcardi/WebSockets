@@ -10,3 +10,4 @@ Put your certificate files (.crt, .pem, and .key) in the WebSockets/Demo/Resourc
 
 {$PROJECTDIR}\Demo\Resources\SSL\caRoot.pem
 
+Docs to come...
