@@ -74,7 +74,7 @@ enum class CloseStatus {
 
     // indicates that an endpoint is terminating the connection because
     // it has received a message that is too big for it to process.
-    ToBigMessage = 1009,
+    TooBigMessage = 1009,
 
     // indicates that an endpoint (client) is terminating the connection
     // because it has expected the server to negotiate one or more extension,
@@ -83,12 +83,12 @@ enum class CloseStatus {
     // appear in the /reason/ part of the Close frame. Note that this status
     // code is not used by the server, because it can fail the WebSocket
     // handshake instead.
-    MissingExtenstion = 1010,
+    MissingExtension = 1010,
 
     // indicates that a server is terminating the connection because it
     // encountered an unexpected condition that prevented it from fulfilling
     //the request.
-    UnExpectedError = 1011,
+    UnexpectedError = 1011,
 
     // is a reserved value and MUST NOT be set as a status code in a Close
     // control frame by an endpoint.  It is designated for use in applications
@@ -234,7 +234,7 @@ protected:
     static bool ReadFrameHeader( TIdIOHandler& IOHandler, TBytes& InBuffer,
                                  size_t& PayloadLen, size_t& PayloadPos,
                                  CloseStatus& CloseReason, String& CloseText );
-    static TBytes BuildFrameHeader( Opcode Type, int DataLen, bool Fin, bool Masked );
+    static TBytes BuildFrameHeader( Opcode Type, uint64_t DataLen, bool Fin, bool Masked );
     static void SendFrame( TIdIOHandler& IOHandler, Opcode Type,
                            TBytes const & Data, bool Fin, bool Masked );
     static Opcode GetOpcode( TBytes const & Data ) {
