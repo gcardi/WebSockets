@@ -6,6 +6,9 @@
 #include <iterator>
 #include <memory>
 
+#include <windows.h>
+#include <bcrypt.h>
+
 #include <IdHashSHA.hpp>
 #include <IdCoderMIME.hpp>
 
@@ -13,11 +16,79 @@
 
 #include "WebSockets.h"
 
+#pragma comment(lib, "Bcrypt.lib")
+
 using std::copy;
 using std::begin;
 using std::end;
 using std::make_unique;
 using std::min;
+
+namespace {
+
+void GenerateRandomBytes( void* Buffer, ULONG Length )
+{
+    NTSTATUS const Status = BCryptGenRandom(
+        nullptr,
+        static_cast<PUCHAR>( Buffer ),
+        Length,
+        BCRYPT_USE_SYSTEM_PREFERRED_RNG
+    );
+    if ( !BCRYPT_SUCCESS( Status ) ) {
+        throw Exception(
+            _D( "BCryptGenRandom failed: 0x%08x" ),
+            ARRAYOFCONST( ( static_cast<int>( Status ) ) )
+        );
+    }
+}
+
+// RFC 3629 / RFC 6455 §8.1: a strict UTF-8 validator that rejects
+// overlong encodings, surrogates, and code points above U+10FFFF.
+bool IsValidUTF8( System::Byte const * Bytes, size_t Length )
+{
+    size_t i = 0;
+    while ( i < Length ) {
+        uint8_t const b = Bytes[i];
+        size_t extra;
+        uint32_t cp;
+        uint32_t min_cp;
+
+        if ( b < 0x80 ) { ++i; continue; }
+        else if ( ( b & 0xE0 ) == 0xC0 ) { extra = 1; cp = b & 0x1F; min_cp = 0x80; }
+        else if ( ( b & 0xF0 ) == 0xE0 ) { extra = 2; cp = b & 0x0F; min_cp = 0x800; }
+        else if ( ( b & 0xF8 ) == 0xF0 ) { extra = 3; cp = b & 0x07; min_cp = 0x10000; }
+        else return false;
+
+        ++i;
+        if ( i + extra > Length ) return false;
+        for ( size_t j = 0; j < extra; ++j ) {
+            uint8_t const c = Bytes[i + j];
+            if ( ( c & 0xC0 ) != 0x80 ) return false;
+            cp = ( cp << 6 ) | ( c & 0x3F );
+        }
+        if ( cp < min_cp ) return false;
+        if ( cp > 0x10FFFF ) return false;
+        if ( cp >= 0xD800 && cp <= 0xDFFF ) return false;
+        i += extra;
+    }
+    return true;
+}
+
+// RFC 6455 §7.4.1 / §7.4.2: codes that an endpoint MAY set in a Close frame.
+// 1004, 1005, 1006, 1015 are reserved and MUST NOT appear on the wire.
+bool IsValidCloseCode( uint16_t Code )
+{
+    if ( Code >= 3000 && Code <= 4999 ) return true;
+    switch ( Code ) {
+        case 1000: case 1001: case 1002: case 1003:
+        case 1007: case 1008: case 1009: case 1010: case 1011:
+            return true;
+        default:
+            return false;
+    }
+}
+
+} // anonymous namespace
 
 //---------------------------------------------------------------------------
 #pragma package(smart_init)
@@ -44,9 +115,9 @@ bool ToCloseStatus( uint16_t Code, CloseStatus& Status )
         case 1006: Status = CloseStatus::ReservedAbnormal;  return true;
         case 1007: Status = CloseStatus::InconsistentData;  return true;
         case 1008: Status = CloseStatus::PolicyError;       return true;
-        case 1009: Status = CloseStatus::ToBigMessage;      return true;
-        case 1010: Status = CloseStatus::MissingExtenstion; return true;
-        case 1011: Status = CloseStatus::UnExpectedError;   return true;
+        case 1009: Status = CloseStatus::TooBigMessage;     return true;
+        case 1010: Status = CloseStatus::MissingExtension;  return true;
+        case 1011: Status = CloseStatus::UnexpectedError;   return true;
         case 1015: Status = CloseStatus::ReservedTLSError;  return true;
         default:   return false;
     }
@@ -56,13 +127,13 @@ bool ToCloseStatus( uint16_t Code, CloseStatus& Status )
 String ToString( Opcode Type )
 {
     switch ( Type ) {
-        case Opcode::Continuation:     return _D( "Continuation" );
-        case Opcode::Text:             return _D( "Text" );
-        case Opcode::Binary:           return _D( "Binary" );
-        case Opcode::Close:            return _D( "Close" );
-        case Opcode::Ping:             return _D( "Ping" );
-        case Opcode::Pong:             return _D( "Pong" );
-        default:                          return _D( "Unknown" );
+        case Opcode::Continuation: return _D( "Continuation" );
+        case Opcode::Text:         return _D( "Text" );
+        case Opcode::Binary:       return _D( "Binary" );
+        case Opcode::Close:        return _D( "Close" );
+        case Opcode::Ping:         return _D( "Ping" );
+        case Opcode::Pong:         return _D( "Pong" );
+        default:                   return _D( "Unknown" );
     }
 }
 //---------------------------------------------------------------------------
@@ -73,13 +144,22 @@ bool WebSocket::ReadFrameHeader( TIdIOHandler& IOHandler, TBytes& InBuffer,
 {
     IOHandler.ReadBytes( InBuffer, 2 );
 
+    // RFC 6455 §5.2: RSV1, RSV2, RSV3 MUST be 0 unless an extension has been
+    // negotiated. No extensions are negotiated here, so any RSV bit is a
+    // protocol error.
+    if ( InBuffer[0] & 0x70 ) {
+        CloseReason = CloseStatus::ProtocolError;
+        CloseText = _D( "Non-zero RSV bits without negotiated extension" );
+        return false;
+    }
+
     size_t Pos { 2 };
 
     switch ( GetLen( InBuffer ) ) {
         case 126:
             IOHandler.ReadBytes( InBuffer, 2, true );
             PayloadLen =
-                ntohs( *reinterpret_cast<uint32_t*>( &InBuffer[Pos] ) );
+                ntohs( *reinterpret_cast<uint16_t*>( &InBuffer[Pos] ) );
             Pos += 2;
             break;
         case 127:
@@ -88,7 +168,7 @@ bool WebSocket::ReadFrameHeader( TIdIOHandler& IOHandler, TBytes& InBuffer,
                 uint64_t const FLen =
                     ntohll( *reinterpret_cast<uint64_t*>( &InBuffer[Pos] ) );
                 if ( FLen > 1073741824 ) {
-                    CloseReason = CloseStatus::ToBigMessage;
+                    CloseReason = CloseStatus::TooBigMessage;
                     CloseText = _D( "Payload data size exceeds 1 GiB" );
                     return false;
                 }
@@ -115,7 +195,7 @@ bool WebSocket::ReadFrameHeader( TIdIOHandler& IOHandler, TBytes& InBuffer,
                 return false;
             }
             if ( PayloadLen > 125 ) {
-                CloseReason = CloseStatus::ToBigMessage;
+                CloseReason = CloseStatus::TooBigMessage;
                 CloseText =
                     _D( "Control frames must have payload data size less than 126" );
                 return false;
@@ -133,7 +213,7 @@ bool WebSocket::ReadFrameHeader( TIdIOHandler& IOHandler, TBytes& InBuffer,
 }
 //---------------------------------------------------------------------------
 
-TBytes WebSocket::BuildFrameHeader( Opcode Type, int DataLen, bool Fin, bool Masked )
+TBytes WebSocket::BuildFrameHeader( Opcode Type, uint64_t DataLen, bool Fin, bool Masked )
 {
     TBytes Header;
     size_t Pos {};
@@ -152,13 +232,13 @@ TBytes WebSocket::BuildFrameHeader( Opcode Type, int DataLen, bool Fin, bool Mas
         Header[Pos++] = static_cast<System::Byte>( DataLen & 255 );
     }
     else {
-        Header.Length = 10 + + ( Masked ? 4 : 0 );
+        Header.Length = 10 + ( Masked ? 4 : 0 );
         Header[Pos++] = static_cast<System::Byte>( Type ) | ( Fin ? 128 : 0 );
         Header[Pos++] = Masked ? 127 + 128 : 127;
-        Header[Pos++] = static_cast<System::Byte>( 0 );
-        Header[Pos++] = static_cast<System::Byte>( 0 );
-        Header[Pos++] = static_cast<System::Byte>( 0 );
-        Header[Pos++] = static_cast<System::Byte>( 0 );
+        Header[Pos++] = static_cast<System::Byte>( DataLen >> 56 );
+        Header[Pos++] = static_cast<System::Byte>( DataLen >> 48 );
+        Header[Pos++] = static_cast<System::Byte>( DataLen >> 40 );
+        Header[Pos++] = static_cast<System::Byte>( DataLen >> 32 );
         Header[Pos++] = static_cast<System::Byte>( DataLen >> 24 );
         Header[Pos++] = static_cast<System::Byte>( DataLen >> 16 );
         Header[Pos++] = static_cast<System::Byte>( DataLen >> 8 );
@@ -175,7 +255,6 @@ bool WebSocket::DoReadFragmentedData( TBytes& AData, CloseStatus& CloseReason,
     TBytes Buffer;
     size_t PayloadLen {};
     size_t PayloadPos {};
-    //auto& IOHandler = GetIOHandler();
 
     static constexpr size_t ChunckSize = 4096;
 
@@ -201,13 +280,30 @@ bool WebSocket::DoReadFragmentedData( TBytes& AData, CloseStatus& CloseReason,
                         _D( "Data frame received: a continuation frame was expected." );
                     return false;
                 case Opcode::Close:
-                    CloseReason = CloseStatus::ProtocolError;
-                    CloseText =
-                        _D( "Close frame received: a continuation frame was expected." );
+                    // RFC 6455 §5.4: control frames MAY be injected in the
+                    // middle of a fragmented message — surface the close
+                    // payload to the caller and stop reassembling.
+                    if ( PayloadLen >= 2 ) {
+                        uint16_t const Code =
+                            ( static_cast<uint16_t>( Buffer[PayloadPos] ) << 8 ) |
+                            static_cast<uint16_t>( Buffer[PayloadPos + 1] );
+                        ToCloseStatus( Code, CloseReason );
+                    }
+                    if ( PayloadLen > 2 ) {
+                        CloseText =
+                            TEncoding::UTF8->GetString(
+                                Buffer.CopyRange(
+                                    PayloadPos + 2,
+                                    PayloadLen - 2
+                                )
+                            );
+                    }
                     return false;
                 case Opcode::Continuation:
-                    if ( DataLen + PayloadLen > Data.Length ) {
-                        // slarga il buffer
+                    // Grow the buffer until it can hold the new payload —
+                    // a single chunk increment is not enough when a frame
+                    // is larger than ChunckSize.
+                    while ( DataLen + PayloadLen > Data.Length ) {
                         Data.Length = Data.Length + ChunckSize;
                     }
                     copy(
@@ -263,12 +359,26 @@ bool WebSocket::DoReadMessage( Opcode& AType, TBytes& AData,
                 case Opcode::Text:
                     AData = Buffer.CopyRange( PayloadPos, PayloadLen );
                     if ( GetFin( Buffer ) ) {
+                        if ( Type == Opcode::Text &&
+                             !IsValidUTF8( &AData[0], AData.Length ) )
+                        {
+                            CloseReason = CloseStatus::InconsistentData;
+                            CloseText = _D( "Invalid UTF-8 in text message" );
+                            return false;
+                        }
                         AType = Type;
                         return true;
                     }
                     else {
                         // go to FRAGDATA state
                         if ( DoReadFragmentedData( AData, CloseReason, CloseText ) ) {
+                            if ( Type == Opcode::Text &&
+                                 !IsValidUTF8( &AData[0], AData.Length ) )
+                            {
+                                CloseReason = CloseStatus::InconsistentData;
+                                CloseText = _D( "Invalid UTF-8 in text message" );
+                                return false;
+                            }
                             AType = Type;
                             return true;
                         }
@@ -279,13 +389,35 @@ bool WebSocket::DoReadMessage( Opcode& AType, TBytes& AData,
                     break;
                 case Opcode::Close:
                     AType = Type;
+                    // RFC 6455 §5.5.1: if there is a body, the first two
+                    // bytes of the body MUST be a 2-byte unsigned integer.
+                    // A payload length of 1 is therefore a protocol error.
+                    if ( PayloadLen == 1 ) {
+                        CloseReason = CloseStatus::ProtocolError;
+                        CloseText = _D( "Close frame payload length cannot be 1" );
+                        return false;
+                    }
                     if ( PayloadLen >= 2 ) {
                         uint16_t const Code =
                             ( static_cast<uint16_t>( Buffer[PayloadPos] ) << 8 ) |
                             static_cast<uint16_t>( Buffer[PayloadPos + 1 ] );
+                        // RFC 6455 §7.4: validate the status code range.
+                        if ( !IsValidCloseCode( Code ) ) {
+                            CloseReason = CloseStatus::ProtocolError;
+                            CloseText = _D( "Invalid close status code" );
+                            return false;
+                        }
                         ToCloseStatus( Code, CloseReason );
                     }
                     if ( PayloadLen > 2 ) {
+                        // RFC 6455 §5.5.1: the close reason is UTF-8 text.
+                        if ( !IsValidUTF8( &Buffer[PayloadPos + 2],
+                                           PayloadLen - 2 ) )
+                        {
+                            CloseReason = CloseStatus::InconsistentData;
+                            CloseText = _D( "Invalid UTF-8 in close reason" );
+                            return false;
+                        }
                         CloseText =
                             TEncoding::UTF8->GetString(
                                 Buffer.CopyRange(
@@ -317,11 +449,13 @@ void WebSocket::SendCloseFrame( CloseStatus CloseReason, TBytes const & CloseDat
     Data.Length = 2 + CloseData.Length;
     Data[0] = static_cast<System::Byte>( static_cast<uint16_t>( CloseReason ) >> 8 );
     Data[1] = static_cast<System::Byte>( static_cast<uint16_t>( CloseReason ) & 255 );
-    copy(
-        begin( const_cast<TBytes&>( CloseData ) ),
-        end( const_cast<TBytes&>( CloseData ) ),
-        &Data[2]
-    );
+    if ( CloseData.Length ) {
+        copy(
+            &CloseData[0],
+            &CloseData[0] + CloseData.Length,
+            &Data[2]
+        );
+    }
     SendFrame( Opcode::Close, Data, true );
 }
 //---------------------------------------------------------------------------
@@ -331,9 +465,33 @@ void WebSocket::DoTryToProcessControlFrame( TBytes& Buffer )
     auto& IOHandler = GetIOHandler();
     IOHandler.CheckForDataOnSource();
     IOHandler.CheckForDisconnect();
-    if ( !IOHandler.InputBufferIsEmpty() ) {
-        IOHandler.ReadBytes( Buffer, IOHandler.InputBuffer->Size );
+    if ( IOHandler.InputBufferIsEmpty() ) {
+        return;
+    }
 
+    // Try to consume one whole frame and dispatch it. Only Ping/Pong/Close
+    // are meaningful between fragments of an outgoing message — a data
+    // frame interleaved here cannot be surfaced to a reader, so we drop it.
+    size_t PayloadLen {};
+    size_t PayloadPos {};
+    CloseStatus CloseReason { CloseStatus::Normal };
+    String CloseText;
+
+    Buffer.Length = 0;
+    if ( !DoReadFrame( Buffer, PayloadLen, PayloadPos, CloseReason, CloseText ) ) {
+        return;
+    }
+
+    switch ( GetOpcode( Buffer ) ) {
+        case Opcode::Ping:
+            SendPongFrame( Buffer.CopyRange( PayloadPos, PayloadLen ) );
+            break;
+        case Opcode::Close:
+            SendCloseFrame( CloseReason, CloseText );
+            break;
+        case Opcode::Pong:
+        default:
+            break;
     }
 }
 //---------------------------------------------------------------------------
@@ -366,20 +524,20 @@ void WebSocket::DoSendMessage( Opcode& Type, TBytes const & Data,
 bool WebSocket::ReadTextFrame( int Timeout, String& Text, String& CloseText,
                                CloseStatus& CloseReason )
 {
-    TBytes Buffer;
-    size_t PayloadLen {};
-    size_t PayloadPos {};
-    bool Masked {};
-    bool Fin {};
-
-    Buffer.Length = 0;
     Opcode Type {};
+    TBytes Data;
 
-    if ( ReadFrame( Buffer, PayloadLen, PayloadPos, CloseReason, CloseText, Timeout ) ) {
-        Text = TEncoding::UTF8->GetString( Buffer, PayloadPos, PayloadLen );
-        return true;
+    if ( !ReadMessage( Type, Data, CloseReason, CloseText, Timeout ) ) {
+        return false;
     }
-    return false;
+    if ( Type != Opcode::Text ) {
+        CloseReason = CloseStatus::UnhandledDataType;
+        CloseText = _D( "Expected a text frame" );
+        return false;
+    }
+    // ReadMessage has already verified the payload is valid UTF-8.
+    Text = TEncoding::UTF8->GetString( Data );
+    return true;
 }
 //---------------------------------------------------------------------------
 
@@ -423,18 +581,17 @@ TIdIOHandler& WebSocket::DoGetIOHandler() const
 
 String WebSocket::GenerateSecretKey()
 {
-    auto SecKeySB = make_unique<TStringBuilder>();
-    for ( int i = 0 ; i < 16 ; ++i ) {
-        SecKeySB->Append( Char( Random( 127 - 32 ) + 32 ) );
-    }
-    return TIdEncoderMIME::EncodeString( SecKeySB->ToString() );
+    // RFC 6455 §4.1: Sec-WebSocket-Key is a base64-encoded 16-byte value
+    // generated from a cryptographically secure source.
+    TBytes KeyBytes;
+    KeyBytes.Length = 16;
+    GenerateRandomBytes( &KeyBytes[0], 16 );
+    return TIdEncoderMIME::EncodeBytes( KeyBytes );
 }
 //---------------------------------------------------------------------------
 
 void WebSocket::TryToUpgrade( String URL, Idheaderlist::TIdHeaderList* AdditionalCustomHeader )
 {
-    Randomize();
-
     auto SecWSKey = GenerateSecretKey();
 
     // base64 encoded
@@ -454,7 +611,7 @@ void WebSocket::TryToUpgrade( String URL, Idheaderlist::TIdHeaderList* Additiona
     );
 
     if ( AdditionalCustomHeader ) {
-        AdditionalCustomHeader->AddStrings( AdditionalCustomHeader );
+        idHTTP_.Request->CustomHeaders->AddStrings( AdditionalCustomHeader );
     }
 
     idHTTP_.Get( URL );
@@ -482,7 +639,7 @@ void WebSocket::TryToUpgrade( String URL, Idheaderlist::TIdHeaderList* Additiona
     }
 
     auto const UpgradeTxt =
-        idHTTP_.Response->RawHeaders->Values[ResponseConnTxt];
+        idHTTP_.Response->RawHeaders->Values[_D( "Upgrade" )];
     if ( !SameText( UpgradeTxt, _D( "websocket" ) ) ) {
         throw Exception(
             _D( "Not upgraded to websocket: %s" ),
@@ -569,7 +726,11 @@ void WebSocket::DoSendFrame( Opcode Type, TBytes const & Data, bool Fin )
 
 uint32_t WebSocket::GenerateMask() const
 {
-    return RandomRange( 0, INT32_MAX );
+    // RFC 6455 §5.3: the masking key MUST be derived from a strong source
+    // of entropy, unpredictable to clients receiving the masked data.
+    uint32_t Mask {};
+    GenerateRandomBytes( &Mask, sizeof( Mask ) );
+    return Mask;
 }
 
 //---------------------------------------------------------------------------
@@ -616,9 +777,11 @@ void WebSocket::DoSendEmptyFrame( Opcode Type )
 {
     TBytes Header;
 
+    // RFC 6455 §5.1: a server MUST NOT mask any frames that it sends to
+    // the client.
     Header.Length = 2;
     Header[0] = static_cast<System::Byte>( Type ) | 128;
-    Header[1] = 128;
+    Header[1] = 0;
     GetIOHandler().Write( Header );
 }
 //---------------------------------------------------------------------------
@@ -630,8 +793,8 @@ void WebSocket::DoSendFrame( Opcode Type, TBytes const & Data, bool Fin )
         auto const Len = Frame.Length;
         Frame.Length = Len + Data.Length;
         copy(
-            begin( const_cast<TBytes&>( Data ) ),
-            end( const_cast<TBytes&>( Data ) ),
+            Data.begin(),
+            Data.end(),
             &Frame[Len]
         );
     }
