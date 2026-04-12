@@ -32,6 +32,9 @@ twfiles.@@@
 *.dll
 !Demo/Resources/SSL/**
 
+# Claude Code workspace settings
+.claude/
+
 # C++ Builder 64-bit extended build outputs
 Win64x/
 
