@@ -32,3 +32,9 @@ twfiles.@@@
 *.dll
 !Demo/Resources/SSL/**
 
+# C++ Builder 64-bit extended build outputs
+Win64x/
+
+# Autobahn individual case reports (keep only index summary)
+Test/AutobahnTest/reports/**/*_case_*.json
+Test/AutobahnTest/reports/**/*_case_*.html
