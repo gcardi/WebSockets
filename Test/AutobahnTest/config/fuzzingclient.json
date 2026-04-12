@@ -1,0 +1,16 @@
+{
+   "outdir": "./reports/server",
+   "servers": [
+      {
+         "agent": "WebSocketsCppBuilder-Server",
+         "url": "ws://172.17.208.1:9001"
+      }
+   ],
+   "cases": ["*"],
+   "exclude-cases": [
+      "9.*",
+      "12.*",
+      "13.*"
+   ],
+   "exclude-agent-cases": {}
+}
