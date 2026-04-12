@@ -195,7 +195,7 @@ bool WebSocket::ReadFrameHeader( TIdIOHandler& IOHandler, TBytes& InBuffer,
                 return false;
             }
             if ( PayloadLen > 125 ) {
-                CloseReason = CloseStatus::TooBigMessage;
+                CloseReason = CloseStatus::ProtocolError;
                 CloseText =
                     _D( "Control frames must have payload data size less than 126" );
                 return false;
@@ -317,11 +317,13 @@ bool WebSocket::DoReadFragmentedData( TBytes& AData, CloseStatus& CloseReason,
                     if ( GetFin( Buffer ) ) {
                         auto const DstPos = AData.Length;
                         AData.Length = DstPos + DataLen;
-                        copy(
-                            &Data[0],
-                            &Data[0] + DataLen,
-                            &AData[0] + DstPos
-                        );
+                        if ( DataLen > 0 ) {
+                            copy(
+                                &Data[0],
+                                &Data[0] + DataLen,
+                                &AData[0] + DstPos
+                            );
+                        }
                         return true;
                     }
                     break;
@@ -360,6 +362,7 @@ bool WebSocket::DoReadMessage( Opcode& AType, TBytes& AData,
                     AData = Buffer.CopyRange( PayloadPos, PayloadLen );
                     if ( GetFin( Buffer ) ) {
                         if ( Type == Opcode::Text &&
+                             AData.Length > 0 &&
                              !IsValidUTF8( &AData[0], AData.Length ) )
                         {
                             CloseReason = CloseStatus::InconsistentData;
@@ -373,6 +376,7 @@ bool WebSocket::DoReadMessage( Opcode& AType, TBytes& AData,
                         // go to FRAGDATA state
                         if ( DoReadFragmentedData( AData, CloseReason, CloseText ) ) {
                             if ( Type == Opcode::Text &&
+                                 AData.Length > 0 &&
                                  !IsValidUTF8( &AData[0], AData.Length ) )
                             {
                                 CloseReason = CloseStatus::InconsistentData;
