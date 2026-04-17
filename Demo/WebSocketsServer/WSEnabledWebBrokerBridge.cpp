@@ -20,6 +20,19 @@ namespace SvcApp {
 using WebSockets::CloseStatus;
 using WebSockets::Opcode;
 
+void TIdHTTPWebSocketEnabledWebBrokerBridge::ConfigureLoopbackHandshake( int Port )
+{
+    allowedOrigins_.Clear();
+
+    auto const PortText = IntToStr( Port );
+    allowedOrigins_.Add( _D( "http://localhost:" ) + PortText );
+    allowedOrigins_.Add( _D( "http://127.0.0.1:" ) + PortText );
+    allowedOrigins_.Add( _D( "http://[::1]:" ) + PortText );
+    allowedOrigins_.Add( _D( "https://localhost:" ) + PortText );
+    allowedOrigins_.Add( _D( "https://127.0.0.1:" ) + PortText );
+    allowedOrigins_.Add( _D( "https://[::1]:" ) + PortText );
+}
+
 void __fastcall TIdHTTPWebSocketEnabledWebBrokerBridge::DoCommandGet(
                       Idcontext::TIdContext* AThread,
                       Idcustomhttpserver::TIdHTTPRequestInfo* ARequestInfo,
@@ -48,7 +61,7 @@ void TIdHTTPWebSocketEnabledWebBrokerBridge::DoWebSocketCommand(
                       Idcustomhttpserver::TIdHTTPResponseInfo* AResponseInfo )
 {
     WebSockets::Server::WebSocket WS(
-        AThread, ARequestInfo, AResponseInfo
+        AThread, ARequestInfo, AResponseInfo, &handshakeOptions_
     );
 
     // Closed state (not cleanly)

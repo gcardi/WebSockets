@@ -66,9 +66,11 @@
         <ILINK_TranslatedLibraryPath>$(BDSLIB)\$(PLATFORM)\release\$(LANGDIR);$(ILINK_TranslatedLibraryPath)</ILINK_TranslatedLibraryPath>
         <ProjectType>CppConsoleApplication</ProjectType>
         <DCC_Namespace>System;Xml;Data;Datasnap;Web;Soap;Vcl;Vcl.Imaging;Vcl.Touch;Vcl.Samples;Vcl.Shell;$(DCC_Namespace)</DCC_Namespace>
-        <AllPackageLibs>rtl.lib;vcl.lib</AllPackageLibs>
+        <AllPackageLibs>rtl.lib;vcl.lib;IndyProtocols.lib;IndyCore.lib;IndySystem.lib</AllPackageLibs>
         <Multithreaded>true</Multithreaded>
         <SanitizedProjectName>TestClient</SanitizedProjectName>
+        <IncludePath>..\..\..;..\..\..;$(IncludePath)</IncludePath>
+        <ILINK_LibraryPath>..\..\..;WebSockets\Test\AutobahnTest\TestClient\;$(ILINK_LibraryPath)</ILINK_LibraryPath>
         <_TCHARMapping>wchar_t</_TCHARMapping>
     </PropertyGroup>
     <PropertyGroup Condition="'$(Base_Win32)'!=''">
@@ -141,10 +143,18 @@
         <LinkPackageStatics>rtl.lib;vcl.lib</LinkPackageStatics>
     </PropertyGroup>
     <ItemGroup>
+        <CppCompile Include="TestClient.cpp">
+            <BuildOrder>1</BuildOrder>
+        </CppCompile>
         <PCHCompile Include="TestClientPCH2.h">
             <BuildOrder>0</BuildOrder>
             <PCH>true</PCH>
         </PCHCompile>
+        <CppCompile Include="..\..\..\WebSockets.cpp">
+            <VirtualFolder>{A2E3649E-99BB-4BBF-8467-7C268BF61EAA}</VirtualFolder>
+            <DependentOn>..\..\..\WebSockets.h</DependentOn>
+            <BuildOrder>2</BuildOrder>
+        </CppCompile>
         <BuildConfiguration Include="Base">
             <Key>Base</Key>
         </BuildConfiguration>
@@ -168,6 +178,9 @@
                     <ProjectProperties Name="VerifyPackages">True</ProjectProperties>
                     <ProjectProperties Name="IndexFiles">False</ProjectProperties>
                 </ProjectProperties>
+                <VFOLDERS>
+                    <VFOLDER ID="{A2E3649E-99BB-4BBF-8467-7C268BF61EAA}" name="WebSockets"/>
+                </VFOLDERS>
             </CPlusPlusBuilder.Personality>
             <Deployment Version="5">
                 <DeployFile Condition="'$(DynamicRTL)'=='true'" LocalName="$(BDS)\Redist\osx32\libcgcrtl.dylib" Class="DependencyModule">

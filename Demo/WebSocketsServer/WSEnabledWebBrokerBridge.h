@@ -43,6 +43,8 @@ public:
     __fastcall TIdHTTPWebSocketEnabledWebBrokerBridge(System::Classes::TComponent* AOwner) override : inherited( AOwner ) { }
     __fastcall TIdHTTPWebSocketEnabledWebBrokerBridge(void) : inherited() { }
 
+    void ConfigureLoopbackHandshake( int Port );
+
     virtual void __fastcall DoCommandGet(
         Idcontext::TIdContext* AThread,
         Idcustomhttpserver::TIdHTTPRequestInfo* ARequestInfo,
@@ -69,6 +71,10 @@ private:
     TIdHTTPWSCommandGetEvent onCommandGet_ { nullptr };
     TIdHTTPWSFrameReceivedEvent onWebSocketFrameReceived_ { nullptr };
     TIdHTTPWSMessageReceivedEvent onWebSocketMessageReceived_ { nullptr };
+    TStringList allowedOrigins_;
+    WebSockets::Server::HandshakeOptions handshakeOptions_ {
+        &allowedOrigins_, nullptr, false, true
+    };
 };
 
 

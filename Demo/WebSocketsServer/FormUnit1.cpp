@@ -172,6 +172,7 @@ void TForm1::StartServer()
     if ( !FServer->Active ) {
         FServer->Bindings->Clear();
         FServer->DefaultPort = StrToInt(EditPort->Text);
+        FServer->ConfigureLoopbackHandshake( FServer->DefaultPort );
         FServer->Active = true;
     }
 }
