@@ -3,8 +3,10 @@
 #ifndef WebSocketsH
 #define WebSocketsH
 
+#include <System.Classes.hpp>
 #include <System.SysUtils.hpp>
 
+#include <cstddef>
 #include <IdIOHandler.hpp>
 #include <IdContext.hpp>
 #include <Idcustomhttpserver.hpp>
@@ -101,6 +103,11 @@ enum class CloseStatus {
 extern bool ToCloseStatus( uint16_t Code, CloseStatus& Status );
 
 extern String ToString( Opcode Type );
+
+struct ResourceLimits {
+    size_t MaxFramePayloadSize { 64u * 1024u * 1024u };
+    size_t MaxMessagePayloadSize { 64u * 1024u * 1024u };
+};
 
 #pragma pack( push, 1 )
 using MaskData =
@@ -213,6 +220,9 @@ public:
         );
     }
 
+    ResourceLimits GetResourceLimits() const { return limits_; }
+    void SetResourceLimits( ResourceLimits const & Value );
+
     bool IsWebSocket() const { return DoIsWebSocket(); }
 protected:
     virtual TIdIOHandler& DoGetIOHandler() const = 0;
@@ -233,6 +243,7 @@ protected:
     virtual bool DoIsWebSocket() const { return true; }
     static bool ReadFrameHeader( TIdIOHandler& IOHandler, TBytes& InBuffer,
                                  size_t& PayloadLen, size_t& PayloadPos,
+                                 size_t MaxFramePayloadSize,
                                  CloseStatus& CloseReason, String& CloseText );
     static TBytes BuildFrameHeader( Opcode Type, uint64_t DataLen, bool Fin, bool Masked );
     static void SendFrame( TIdIOHandler& IOHandler, Opcode Type,
@@ -243,7 +254,8 @@ protected:
     static bool GetFin( TBytes const & Data ) { return Data[0] & 128; }
     static bool GetMasked( TBytes const & Data ) { return Data[1] & 128; }
     static System::Byte GetLen( TBytes const & Data ) { return Data[1] & 127; }
-private:
+protected:
+    ResourceLimits limits_ {};
 };
 
 //---------------------------------------------------------------------------
@@ -278,20 +290,30 @@ private:
 namespace Server {
 //---------------------------------------------------------------------------
 
+struct HandshakeOptions {
+    TStrings* AllowedOrigins { nullptr };
+    TStrings* AllowedSubprotocols { nullptr };
+    bool RequireOrigin { false };
+    bool RejectExtensions { false };
+};
+
 class WebSocket final : public WebSockets::WebSocket {
 public:
     WebSocket( Idcontext::TIdContext* AThread,
                Idcustomhttpserver::TIdHTTPRequestInfo* ARequestInfo,
-               Idcustomhttpserver::TIdHTTPResponseInfo* AResponseInfo )
+               Idcustomhttpserver::TIdHTTPResponseInfo* AResponseInfo,
+               HandshakeOptions const * AOptions = nullptr )
       : thread_( *AThread )
       , requestInfo_( *ARequestInfo )
       , responseInfo_( *AResponseInfo )
+      , options_( AOptions != nullptr ? *AOptions : HandshakeOptions{} )
       , isWebSocket_( TryToUpgrade() )
     {}
     WebSocket( WebSocket const & ) = delete;
     WebSocket& operator=( WebSocket const & ) = delete;
     Idcustomhttpserver::TIdHTTPRequestInfo& GetRequestInfo() const { return requestInfo_; }
     Idcustomhttpserver::TIdHTTPResponseInfo& GetResponseInfo() const { return responseInfo_; }
+    String GetAcceptedSubprotocol() const { return acceptedSubprotocol_; }
 protected:
     virtual TIdIOHandler& DoGetIOHandler() const override;
     virtual bool DoReadFrame( TBytes& InBuffer, size_t& PayloadLen,
@@ -305,9 +327,13 @@ private:
     Idcontext::TIdContext& thread_;
     Idcustomhttpserver::TIdHTTPRequestInfo& requestInfo_;
     Idcustomhttpserver::TIdHTTPResponseInfo& responseInfo_;
+    HandshakeOptions options_;
+    String acceptedSubprotocol_;
     bool isWebSocket_;
 
     bool TryToUpgrade();
+    bool TryValidateOrigin( String& RejectText );
+    bool TryNegotiateSubprotocol( String& RejectText );
 };
 
 //---------------------------------------------------------------------------

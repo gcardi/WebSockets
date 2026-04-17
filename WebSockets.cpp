@@ -16,8 +16,6 @@
 
 #include "WebSockets.h"
 
-#pragma comment(lib, "Bcrypt.lib")
-
 using std::copy;
 using std::begin;
 using std::end;
@@ -26,9 +24,29 @@ using std::min;
 
 namespace {
 
+using BCryptGenRandomFn = NTSTATUS (WINAPI *)( BCRYPT_ALG_HANDLE, PUCHAR, ULONG, ULONG );
+
+BCryptGenRandomFn GetBCryptGenRandom()
+{
+    static HMODULE const BCryptModule = LoadLibraryW( L"bcrypt.dll" );
+    static auto const BCryptGenRandomProc =
+        BCryptModule != nullptr
+            ? reinterpret_cast<BCryptGenRandomFn>(
+                GetProcAddress( BCryptModule, "BCryptGenRandom" )
+              )
+            : nullptr;
+
+    return BCryptGenRandomProc;
+}
+
 void GenerateRandomBytes( void* Buffer, ULONG Length )
 {
-    NTSTATUS const Status = BCryptGenRandom(
+    auto const BCryptGenRandomProc = GetBCryptGenRandom();
+    if ( BCryptGenRandomProc == nullptr ) {
+        throw Exception( _D( "BCryptGenRandom is unavailable" ) );
+    }
+
+    NTSTATUS const Status = BCryptGenRandomProc(
         nullptr,
         static_cast<PUCHAR>( Buffer ),
         Length,
@@ -88,6 +106,76 @@ bool IsValidCloseCode( uint16_t Code )
     }
 }
 
+bool IsValidBase64Char( WideChar Ch )
+{
+    return
+        ( Ch >= _D( 'A' ) && Ch <= _D( 'Z' ) ) ||
+        ( Ch >= _D( 'a' ) && Ch <= _D( 'z' ) ) ||
+        ( Ch >= _D( '0' ) && Ch <= _D( '9' ) ) ||
+        Ch == _D( '+' ) ||
+        Ch == _D( '/' );
+}
+
+bool IsValidWebSocketKey( String const & Value )
+{
+    auto const Key = Trim( Value );
+
+    // RFC 6455 §4.1: the client key is the Base64 encoding of 16 bytes.
+    if ( Key.Length() != 24 ) {
+        return false;
+    }
+
+    for ( int Idx = 1; Idx <= 22; ++Idx ) {
+        if ( !IsValidBase64Char( Key[Idx] ) ) {
+            return false;
+        }
+    }
+
+    return Key[23] == _D( '=' ) && Key[24] == _D( '=' );
+}
+
+bool IsValueAllowed( TStrings* Values, String const & Candidate )
+{
+    if ( Values == nullptr ) {
+        return false;
+    }
+
+    auto const NormalizedCandidate = Trim( Candidate );
+    for ( int Idx = 0; Idx < Values->Count; ++Idx ) {
+        if ( SameText( Trim( Values->Strings[Idx] ), NormalizedCandidate ) ) {
+            return true;
+        }
+    }
+
+    return false;
+}
+
+std::unique_ptr<TStringList> SplitHeaderValues( String const & HeaderValue )
+{
+    auto Tokens = make_unique<TStringList>();
+    Tokens->StrictDelimiter = true;
+    Tokens->Delimiter = ',';
+    Tokens->DelimitedText = HeaderValue;
+    return Tokens;
+}
+
+bool HeaderHasToken( String const & HeaderValue, String const & Token )
+{
+    auto Tokens = SplitHeaderValues( HeaderValue );
+    return IsValueAllowed( Tokens.get(), Token );
+}
+
+void ValidateResourceLimits( SvcApp::WebSockets::ResourceLimits const & Limits )
+{
+    if ( Limits.MaxFramePayloadSize == 0 ) {
+        throw Exception( _D( "MaxFramePayloadSize must be greater than 0" ) );
+    }
+
+    if ( Limits.MaxMessagePayloadSize == 0 ) {
+        throw Exception( _D( "MaxMessagePayloadSize must be greater than 0" ) );
+    }
+}
+
 } // anonymous namespace
 
 //---------------------------------------------------------------------------
@@ -138,8 +226,16 @@ String ToString( Opcode Type )
 }
 //---------------------------------------------------------------------------
 
+void WebSocket::SetResourceLimits( ResourceLimits const & Value )
+{
+    ValidateResourceLimits( Value );
+    limits_ = Value;
+}
+//---------------------------------------------------------------------------
+
 bool WebSocket::ReadFrameHeader( TIdIOHandler& IOHandler, TBytes& InBuffer,
                                  size_t& PayloadLen, size_t& PayloadPos,
+                                 size_t MaxFramePayloadSize,
                                  CloseStatus& CloseReason, String& CloseText )
 {
     IOHandler.ReadBytes( InBuffer, 2 );
@@ -167,9 +263,9 @@ bool WebSocket::ReadFrameHeader( TIdIOHandler& IOHandler, TBytes& InBuffer,
                 IOHandler.ReadBytes( InBuffer, 8, true );
                 uint64_t const FLen =
                     ntohll( *reinterpret_cast<uint64_t*>( &InBuffer[Pos] ) );
-                if ( FLen > 1073741824 ) {
+                if ( FLen > MaxFramePayloadSize ) {
                     CloseReason = CloseStatus::TooBigMessage;
-                    CloseText = _D( "Payload data size exceeds 1 GiB" );
+                    CloseText = _D( "Payload data size exceeds configured frame limit" );
                     return false;
                 }
                 Pos += 8;
@@ -179,6 +275,12 @@ bool WebSocket::ReadFrameHeader( TIdIOHandler& IOHandler, TBytes& InBuffer,
         default:
             PayloadLen = GetLen( InBuffer );
             break;
+    }
+
+    if ( PayloadLen > MaxFramePayloadSize ) {
+        CloseReason = CloseStatus::TooBigMessage;
+        CloseText = _D( "Payload data size exceeds configured frame limit" );
+        return false;
     }
 
     switch ( GetOpcode( InBuffer) ) {
@@ -300,6 +402,12 @@ bool WebSocket::DoReadFragmentedData( TBytes& AData, CloseStatus& CloseReason,
                     }
                     return false;
                 case Opcode::Continuation:
+                    if ( AData.Length + DataLen + PayloadLen > limits_.MaxMessagePayloadSize ) {
+                        CloseReason = CloseStatus::TooBigMessage;
+                        CloseText = _D( "Message data size exceeds configured limit" );
+                        return false;
+                    }
+
                     // Grow the buffer until it can hold the new payload —
                     // a single chunk increment is not enough when a frame
                     // is larger than ChunckSize.
@@ -360,6 +468,11 @@ bool WebSocket::DoReadMessage( Opcode& AType, TBytes& AData,
                 case Opcode::Binary:
                 case Opcode::Text:
                     AData = Buffer.CopyRange( PayloadPos, PayloadLen );
+                    if ( AData.Length > limits_.MaxMessagePayloadSize ) {
+                        CloseReason = CloseStatus::TooBigMessage;
+                        CloseText = _D( "Message data size exceeds configured limit" );
+                        return false;
+                    }
                     if ( GetFin( Buffer ) ) {
                         if ( Type == Opcode::Text &&
                              AData.Length > 0 &&
@@ -448,11 +561,23 @@ bool WebSocket::DoReadMessage( Opcode& AType, TBytes& AData,
 
 void WebSocket::SendCloseFrame( CloseStatus CloseReason, TBytes const & CloseData )
 {
+    auto const StatusCode = static_cast<uint16_t>( CloseReason );
+    if ( !IsValidCloseCode( StatusCode ) ) {
+        throw Exception(
+            _D( "Close status code cannot be sent on the wire: %d" ),
+            ARRAYOFCONST( ( static_cast<int>( StatusCode ) ) )
+        );
+    }
+
+    if ( CloseData.Length > 123 ) {
+        throw Exception( _D( "Close frame reason must be 123 bytes or less" ) );
+    }
+
     TBytes Data;
 
     Data.Length = 2 + CloseData.Length;
-    Data[0] = static_cast<System::Byte>( static_cast<uint16_t>( CloseReason ) >> 8 );
-    Data[1] = static_cast<System::Byte>( static_cast<uint16_t>( CloseReason ) & 255 );
+    Data[0] = static_cast<System::Byte>( StatusCode >> 8 );
+    Data[1] = static_cast<System::Byte>( StatusCode & 255 );
     if ( CloseData.Length ) {
         copy(
             &CloseData[0],
@@ -504,6 +629,10 @@ void WebSocket::DoSendMessage( Opcode& Type, TBytes const & Data,
                                CloseStatus& CloseReason, String& CloseText,
                                size_t MaxChunkSize )
 {
+    if ( MaxChunkSize == 0 ) {
+        throw Exception( _D( "MaxChunkSize must be greater than 0" ) );
+    }
+
     if ( Data.Length > MaxChunkSize ) {
         SendFrame( Type, Data.CopyRange( 0, MaxChunkSize ), false );
 
@@ -618,6 +747,9 @@ void WebSocket::TryToUpgrade( String URL, Idheaderlist::TIdHeaderList* Additiona
         idHTTP_.Request->CustomHeaders->AddStrings( AdditionalCustomHeader );
     }
 
+    auto const OfferedSubprotocols =
+        idHTTP_.Request->CustomHeaders->Values[_D( "Sec-WebSocket-Protocol" )];
+
     idHTTP_.Get( URL );
 
     auto& Response = *idHTTP_.Response;
@@ -635,7 +767,7 @@ void WebSocket::TryToUpgrade( String URL, Idheaderlist::TIdHeaderList* Additiona
     }
 
     auto const ResponseConnTxt = idHTTP_.Response->Connection;
-    if ( !SameText( ResponseConnTxt, _D( "upgrade" ) ) ) {
+    if ( !HeaderHasToken( ResponseConnTxt, _D( "upgrade" ) ) ) {
         throw Exception(
             _D( "Connection not upgraded: %s" ),
             ARRAYOFCONST( ( ResponseConnTxt ) )
@@ -649,6 +781,30 @@ void WebSocket::TryToUpgrade( String URL, Idheaderlist::TIdHeaderList* Additiona
             _D( "Not upgraded to websocket: %s" ),
             ARRAYOFCONST( ( UpgradeTxt ) )
         );
+    }
+
+    auto const ResponseExtensions =
+        Trim( Response.RawHeaders->Values[_D( "Sec-WebSocket-Extensions" )] );
+    if ( !ResponseExtensions.IsEmpty() ) {
+        throw Exception(
+            _D( "Unsupported extension negotiated: %s" ),
+            ARRAYOFCONST( ( ResponseExtensions ) )
+        );
+    }
+
+    auto const AcceptedSubprotocol =
+        Trim( Response.RawHeaders->Values[_D( "Sec-WebSocket-Protocol" )] );
+    if ( !AcceptedSubprotocol.IsEmpty() ) {
+        auto OfferedTokens = SplitHeaderValues( OfferedSubprotocols );
+        if ( OfferedSubprotocols.IsEmpty() ||
+             AcceptedSubprotocol.Pos( _D( "," ) ) > 0 ||
+             !IsValueAllowed( OfferedTokens.get(), AcceptedSubprotocol ) )
+        {
+            throw Exception(
+                _D( "Unexpected subprotocol negotiated: %s" ),
+                ARRAYOFCONST( ( AcceptedSubprotocol ) )
+            );
+        }
     }
 
     auto Hash = make_unique<TIdHashSHA1>();
@@ -678,7 +834,8 @@ bool WebSocket::DoReadFrame( TBytes& InBuffer, size_t& PayloadLen,
 {
     auto& IOHandler = GetIOHandler();
 
-    if ( ReadFrameHeader( IOHandler, InBuffer, PayloadLen, PayloadPos, Reason,
+    if ( ReadFrameHeader( IOHandler, InBuffer, PayloadLen, PayloadPos,
+                          limits_.MaxFramePayloadSize, Reason,
                           CloseText ) )
     {
         if ( !GetMasked( InBuffer ) ) {
@@ -743,6 +900,64 @@ uint32_t WebSocket::GenerateMask() const
 namespace Server {
 //---------------------------------------------------------------------------
 
+bool WebSocket::TryValidateOrigin( String& RejectText )
+{
+    auto const Origin = Trim( GetRequestInfo().RawHeaders->Values[_D( "Origin" )] );
+    auto const HasOriginAllowList =
+        options_.AllowedOrigins != nullptr &&
+        options_.AllowedOrigins->Count > 0;
+
+    if ( Origin.IsEmpty() ) {
+        if ( options_.RequireOrigin || HasOriginAllowList ) {
+            GetResponseInfo().ResponseNo = 403;
+            RejectText = _D( "origin header is required" );
+            return false;
+        }
+        return true;
+    }
+
+    if ( HasOriginAllowList && !IsValueAllowed( options_.AllowedOrigins, Origin ) ) {
+        GetResponseInfo().ResponseNo = 403;
+        RejectText = _D( "origin not allowed" );
+        return false;
+    }
+
+    return true;
+}
+
+bool WebSocket::TryNegotiateSubprotocol( String& RejectText )
+{
+    auto const OfferedSubprotocols =
+        Trim( GetRequestInfo().RawHeaders->Values[_D( "Sec-WebSocket-Protocol" )] );
+
+    acceptedSubprotocol_ = String();
+
+    if ( OfferedSubprotocols.IsEmpty() ) {
+        return true;
+    }
+
+    if ( options_.AllowedSubprotocols == nullptr ||
+         options_.AllowedSubprotocols->Count == 0 )
+    {
+        return true;
+    }
+
+    auto Tokens = SplitHeaderValues( OfferedSubprotocols );
+    for ( int Idx = 0; Idx < Tokens->Count; ++Idx ) {
+        auto const Candidate = Trim( Tokens->Strings[Idx] );
+        if ( !Candidate.IsEmpty() &&
+             IsValueAllowed( options_.AllowedSubprotocols, Candidate ) )
+        {
+            acceptedSubprotocol_ = Candidate;
+            return true;
+        }
+    }
+
+    GetResponseInfo().ResponseNo = 400;
+    RejectText = _D( "unsupported subprotocol requested" );
+    return false;
+}
+
 TIdIOHandler& WebSocket::DoGetIOHandler() const
 {
     return *thread_.Connection->IOHandler;
@@ -756,6 +971,7 @@ bool WebSocket::DoReadFrame( TBytes& InBuffer, size_t& PayloadLen,
     auto& IOHandler = GetIOHandler();
 
     if ( ReadFrameHeader( IOHandler, InBuffer, PayloadLen, PayloadPos,
+                          limits_.MaxFramePayloadSize,
                           CloseReason, CloseText ) )
     {
         if ( GetMasked( InBuffer ) ) {
@@ -810,10 +1026,11 @@ bool WebSocket::TryToUpgrade()
 {
     auto& RequestInfo = GetRequestInfo();
     auto& ResponseInfo = GetResponseInfo();
+    String RejectText;
 
     if ( !RequestInfo.IsVersionAtLeast( 1, 1 ) ||
          !SameText( RequestInfo.RawHeaders->Values[_D( "Upgrade" )], _D( "websocket" ) ) ||
-         ToLower( RequestInfo.Connection ).Pos( _D( "upgrade" ) ) == 0 )
+            !HeaderHasToken( RequestInfo.Connection, _D( "upgrade" ) ) )
     {
         GetResponseInfo().ResponseNo = 426;
         GetResponseInfo().ResponseText = _D( "upgrade required" );
@@ -823,24 +1040,45 @@ bool WebSocket::TryToUpgrade()
     if ( RequestInfo.RawHeaders->Values[_D("Sec-WebSocket-Version")] != _D( "13" ) ) {
         ResponseInfo.ResponseNo = 400;
         ResponseInfo.ResponseText = _D( "invalid Sec-WebSocket-Version, expected 13" );
+        ResponseInfo.CustomHeaders->Values[_D( "Sec-WebSocket-Version" )] = _D( "13" );
         return false;
     }
 
-    String SecWSKey = GetRequestInfo().RawHeaders->Values[_D("Sec-WebSocket-Key")];
+    String SecWSKey = Trim( GetRequestInfo().RawHeaders->Values[_D("Sec-WebSocket-Key")] );
 
-    if ( SecWSKey.IsEmpty() ) {
+    if ( !IsValidWebSocketKey( SecWSKey ) ) {
         ResponseInfo.ResponseNo = 400;
-        ResponseInfo.ResponseText = _D( "secret key is empty" );
+        ResponseInfo.ResponseText = _D( "invalid Sec-WebSocket-Key" );
         return false;
     }
 
-    // validate Origin, Sec-WebSocket-Protocol, and Sec-WebSocket-Extensions as needed...
+    if ( options_.RejectExtensions &&
+         !Trim( RequestInfo.RawHeaders->Values[_D( "Sec-WebSocket-Extensions" )] ).IsEmpty() )
+    {
+        ResponseInfo.ResponseNo = 400;
+        ResponseInfo.ResponseText = _D( "extensions are not supported" );
+        return false;
+    }
+
+    if ( !TryValidateOrigin( RejectText ) ) {
+        ResponseInfo.ResponseText = RejectText;
+        return false;
+    }
+
+    if ( !TryNegotiateSubprotocol( RejectText ) ) {
+        ResponseInfo.ResponseText = RejectText;
+        return false;
+    }
 
     ResponseInfo.ResponseNo         = 101;
     ResponseInfo.ResponseText       = _D( "Switching Protocols" );
     ResponseInfo.CloseConnection    = false;
     ResponseInfo.Connection         = _D( "Upgrade" );
     ResponseInfo.CustomHeaders->Values[_D( "Upgrade" )] = _D( "websocket" );
+    if ( !acceptedSubprotocol_.IsEmpty() ) {
+        ResponseInfo.CustomHeaders->Values[_D( "Sec-WebSocket-Protocol" )] =
+            acceptedSubprotocol_;
+    }
 
     auto Hash = make_unique<TIdHashSHA1>();
 
