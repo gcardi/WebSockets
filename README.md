@@ -54,6 +54,9 @@ Then add the include:
 
 Everything lives inside the `SvcApp::WebSockets` namespace.
 
+For a deeper API reference, implementation notes, and Mermaid diagrams, see
+[`TechnicalDocs.md`](TechnicalDocs.md).
+
 ---
 
 ## Usage
