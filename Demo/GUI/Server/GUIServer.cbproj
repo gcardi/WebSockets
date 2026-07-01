@@ -77,8 +77,6 @@
     </PropertyGroup>
     <PropertyGroup Condition="'$(Base)'!=''">
         <DCC_CBuilderOutput>JPHNE</DCC_CBuilderOutput>
-        <DynamicRTL>true</DynamicRTL>
-        <UsePackages>true</UsePackages>
         <IntermediateOutputDir>.\$(Platform)\$(Config)</IntermediateOutputDir>
         <FinalOutputDir>.\$(Platform)\$(Config)</FinalOutputDir>
         <BCC_wpar>false</BCC_wpar>
@@ -179,7 +177,9 @@ $(PostBuildEvent)]]></PostBuildEvent>
     </PropertyGroup>
     <PropertyGroup Condition="'$(Cfg_2_Win64x)'!=''">
         <AppDPIAwarenessMode>PerMonitorV2</AppDPIAwarenessMode>
-        <LinkPackageImports>vcl.bpi;rtl.bpi;DataSnapServer.bpi;DataSnapCommon.bpi;DbxClientDriver.bpi;CustomIPTransport.bpi;DbxCommonDriver.bpi;dbrtl.bpi;inet.bpi;DataSnapClient.bpi;IndyIPServer.bpi;IndyIPCommon.bpi;IndySystem.bpi;IndyProtocols.bpi;IndyCore.bpi</LinkPackageImports>
+        <VerInfo_IncludeVerInfo>true</VerInfo_IncludeVerInfo>
+        <VerInfo_Locale>1033</VerInfo_Locale>
+        <LinkPackageStatics>vcl.lib;rtl.lib;DataSnapServer.lib;DataSnapCommon.lib;DbxClientDriver.lib;CustomIPTransport.lib;DbxCommonDriver.lib;dbrtl.lib;inet.lib;DataSnapClient.lib;IndyIPServer.lib;IndyIPCommon.lib;IndySystem.lib;IndyProtocols.lib;IndyCore.lib</LinkPackageStatics>
     </PropertyGroup>
     <ItemGroup>
         <None Include="css\main.css"/>
@@ -194,7 +194,6 @@ $(PostBuildEvent)]]></PostBuildEvent>
             <BuildOrder>0</BuildOrder>
         </CppCompile>
         <ResFiles Include="GUIServer.res">
-            <ModuleName>GUIServer.res</ModuleName>
             <BuildOrder>1</BuildOrder>
         </ResFiles>
         <RcItem Include="images\collapse.png">
