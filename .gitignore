@@ -1,16 +1,17 @@
 __astcache/
 __history/
 __recovery/
-Docs/
 Win32/
 Win64/
 html/
 latex/
 *.bak
+*.d
 *.dcp
 *.dcu
 *.drc
 *.dres
+*.exe
 *.bpl
 *.bpi
 *.il?
@@ -20,6 +21,7 @@ latex/
 *.obj
 *.ocx
 *.pdi
+*.pdb
 *.res
 *.rsm
 *.so
