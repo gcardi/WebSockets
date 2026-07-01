@@ -40,6 +40,9 @@ twfiles.@@@
 # C++ Builder 64-bit extended build outputs
 Win64x/
 
+# Local release packaging output
+dist/
+
 # Autobahn generated reports
 Test/AutobahnTest/reports/client/*
 !Test/AutobahnTest/reports/client/.gitkeep
