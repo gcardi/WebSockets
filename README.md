@@ -55,7 +55,38 @@ Then add the include:
 Everything lives inside the `SvcApp::WebSockets` namespace.
 
 For a deeper API reference, implementation notes, and Mermaid diagrams, see
-[`TechnicalDocs.md`](TechnicalDocs.md).
+[`docs/TechnicalDocs.md`](docs/TechnicalDocs.md).
+
+---
+
+## GUI Demos
+
+The [`Demo/GUI`](Demo/GUI/) folder contains two RAD Studio 13 / bcc64x VCL
+demo projects:
+
+- [`WebSocketClient`](Demo/GUI/WebSocketClient/) is a VCL client demo that uses
+  `SvcApp::WebSockets::Client::WebSocket` with `TIdHTTP`.
+- [`WebSocketServer`](Demo/GUI/WebSocketServer/) is a WebBroker/DataSnap server
+  demo that uses `SvcApp::WebSockets::Server::WebSocket` through the
+  `TIdHTTPWebSocketEnabledWebBrokerBridge` adapter.
+
+The client demo depends on
+[Anafestica](https://github.com/gcardi/Anafestica). Install Anafestica in the
+appropriate folder under `$(BDSCOMMONDIR)` as described by that project so the
+demo include/library paths resolve cleanly. Anafestica is used here to persist
+the client parameters under:
+
+```text
+Computer\HKEY_CURRENT_USER\Software\Company\VclAppWSClient\1.0\frmMain
+```
+
+Client demo:
+
+![WebSocket client demo](docs/assets/images/WebSocketClientDemo.png)
+
+Server demo:
+
+![WebSocket server demo](docs/assets/images/WebSocketServerDemo.png)
 
 ---
 
@@ -63,10 +94,17 @@ For a deeper API reference, implementation notes, and Mermaid diagrams, see
 
 ### Server
 
-The server side integrates with Indy's `TIdHTTPServer` (or any subclass such as
-`TIdHTTPWebBrokerBridge`). Construct `Server::WebSocket` inside your
-`OnCommandGet` handler and pass the three Indy context objects. Call
-`IsWebSocket()` to confirm the upgrade succeeded before reading or writing.
+The server side integrates directly with Indy's `TIdHTTPServer`. Construct
+`Server::WebSocket` inside your `OnCommandGet` handler and pass the three Indy
+context objects. Call `IsWebSocket()` to confirm the upgrade succeeded before
+reading or writing.
+
+For WebBroker/DataSnap servers based on `TIdHTTPWebBrokerBridge`, use the
+demo's `TIdHTTPWebSocketEnabledWebBrokerBridge` adapter from
+`Demo/GUI/WebSocketServer/WSEnabledWebBrokerBridge.*`. That bridge intercepts
+the WebSocket endpoint, performs the upgrade, and exposes WebSocket message and
+frame events while letting normal HTTP/WebBroker requests continue through the
+inherited bridge.
 
 ```cpp
 #include "WebSockets.h"
@@ -125,18 +163,19 @@ while ( WS.ReadFrame( Buffer, PayloadLen, PayloadPos, CloseReason, CloseText, 10
 ### Client
 
 Construct `Client::WebSocket` by passing a `TIdHTTP` instance and the target
-WebSocket URL (`ws://` or `wss://`). The constructor performs the HTTP upgrade
-handshake immediately. An exception is thrown if the handshake fails.
+HTTP URL (`http://` or `https://`) to upgrade. The constructor adds the
+WebSocket handshake headers and performs the HTTP upgrade immediately. An
+exception is thrown if the handshake fails.
 
 ```cpp
 #include "WebSockets.h"
 
 using namespace SvcApp::WebSockets;
 
-// HTTP object (configure TLS handler on it if connecting to wss://)
+// HTTP object (configure TLS handler on it if connecting to https://)
 auto HTTP = std::make_unique<TIdHTTP>( nullptr );
 
-Client::WebSocket WS{ *HTTP, _D( "ws://example.com/chat" ) };
+Client::WebSocket WS{ *HTTP, _D( "http://example.com/chat" ) };
 
 // Send a text message (single frame)
 WS.SendFrame( _D( "Hello, server!" ) );
@@ -244,9 +283,9 @@ Reports are written to `reports/client/`.
 
 ## SSL / TLS Support
 
-For `wss://` connections on the client side, attach a
+For secure WebSocket connections on the client side, attach a
 `TIdSSLIOHandlerSocketOpenSSL` to your `TIdHTTP` before constructing
-`Client::WebSocket`:
+`Client::WebSocket`, and pass an `https://` URL:
 
 ```cpp
 auto SSL = std::make_unique<TIdSSLIOHandlerSocketOpenSSL>( nullptr );
@@ -254,13 +293,13 @@ SSL->SSLOptions->Method = sslvTLSv1_2;
 SSL->PassThrough = false;
 HTTP->IOHandler = SSL.get();
 
-Client::WebSocket WS{ *HTTP, _D( "wss://secure.example.com/ws" ) };
+Client::WebSocket WS{ *HTTP, _D( "https://secure.example.com/ws" ) };
 ```
 
 The WebSocket library does not perform certificate validation by itself.
-Production `wss://` clients must configure peer verification, trust anchors,
+Production secure WebSocket clients must configure peer verification, trust anchors,
 and hostname checks on Indy / OpenSSL. If certificate verification is disabled,
-`wss://` still encrypts traffic but does not authenticate the peer.
+the connection still encrypts traffic but does not authenticate the peer.
 
 For the server side, configure SSL on the `TIdHTTPServer` /
 `TIdHTTPWebBrokerBridge` as you normally would with Indy — no changes to the

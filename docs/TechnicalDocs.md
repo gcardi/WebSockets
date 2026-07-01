@@ -6,9 +6,14 @@ contains the public API, and `WebSockets.cpp` contains the RFC 6455 frame,
 message, and handshake implementation.
 
 The code is designed for RAD Studio / C++Builder applications that already use
-Indy. Client connections are built on `TIdHTTP`; server connections are built on
-`TIdHTTPServer`, `TIdHTTPWebBrokerBridge`, or compatible Indy HTTP server
-classes.
+Indy. Client connections are built on `TIdHTTP`; simple server connections can
+be built directly on `TIdHTTPServer`.
+
+WebBroker/DataSnap servers need a small adapter around
+`TIdHTTPWebBrokerBridge`, because normal WebBroker request dispatch does not by
+itself own the long-running WebSocket read loop. The demo provides that adapter
+as `TIdHTTPWebSocketEnabledWebBrokerBridge` in
+`Demo/GUI/WebSocketServer/WSEnabledWebBrokerBridge.*`.
 
 ## Module Layout
 
@@ -259,6 +264,11 @@ Client::WebSocket(
 The constructor performs the HTTP upgrade immediately. If the upgrade fails,
 it throws an exception.
 
+Pass an `http://` or `https://` URL to this constructor. `Client::WebSocket`
+uses `TIdHTTP` to send the HTTP request, then adds the WebSocket upgrade headers
+internally. The logical WebSocket endpoint is the same path after the server
+accepts the upgrade.
+
 The caller owns the `TIdHTTP` instance and must keep it alive for the lifetime
 of the `Client::WebSocket`.
 
@@ -317,6 +327,93 @@ constructor, it does not throw for normal handshake rejection. Call
 
 The caller owns the Indy objects and must keep them valid for the lifetime of
 the `Server::WebSocket`.
+
+### WebBroker Bridge Adapter
+
+For a plain `TIdHTTPServer`, application code can construct
+`Server::WebSocket` directly in the server's `OnCommandGet` handler. The
+console server example below uses this approach.
+
+For WebBroker/DataSnap applications based on `TIdHTTPWebBrokerBridge`, use the
+demo adapter:
+
+```cpp
+#include "WSEnabledWebBrokerBridge.h"
+
+using ServerType = SvcApp::TIdHTTPWebSocketEnabledWebBrokerBridge;
+```
+
+`TIdHTTPWebSocketEnabledWebBrokerBridge` derives from `TIdHTTPWebBrokerBridge`
+and overrides `DoCommandGet`. Requests whose document path is not `/websocket`
+are delegated to the inherited WebBroker bridge. Requests for `/websocket` are
+handled by `DoWebSocketCommand`, which constructs
+`SvcApp::WebSockets::Server::WebSocket`, performs the server-side handshake,
+enters the WebSocket read loop, and disconnects the Indy context when the
+conversation ends.
+
+The adapter exposes these WebSocket-specific events:
+
+| Event | Purpose |
+| --- | --- |
+| `OnCommandGet` | Optional pre-processing hook; set `Handled` to bypass normal bridge/WebSocket dispatch. |
+| `OnWebSocketFrameReceived` | Frame-level callback for applications that need raw frame payload handling. |
+| `OnWebSocketMessageReceived` | Message-level callback for normal text/binary WebSocket messages. |
+
+The demo form uses `OnWebSocketMessageReceived` to receive a fully reassembled
+message and echo a response through the supplied `Server::WebSocket` instance.
+It also calls `ConfigureLoopbackHandshake(Port)` before activating the server,
+which prepares loopback origins and configures the bridge's default handshake
+options to reject unsupported extensions.
+
+## GUI Demo Projects
+
+The `Demo/GUI` folder contains two VCL projects that exercise the library from
+both sides of a local WebSocket connection.
+
+### `Demo/GUI/WebSocketClient`
+
+`WebSocketClient` is a VCL client demo built around `TIdHTTP` and
+`SvcApp::WebSockets::Client::WebSocket`. It can send single-frame text and
+binary messages, and it can also send fragmented text messages through
+`SendMessage`.
+
+![WebSocket client demo](assets/images/WebSocketClientDemo.png)
+
+The project depends on
+[Anafestica](https://github.com/gcardi/Anafestica). Install Anafestica in the
+appropriate folder under `$(BDSCOMMONDIR)` as described by the Anafestica
+documentation. The demo project include/library paths are set up to find
+Anafestica from that common RAD Studio location.
+
+Anafestica provides the form persistence used by the client demo. The persisted
+parameters include the target URL, text payload, binary payload, fragmented
+message length, and fragment size. They are stored in the registry under:
+
+```text
+Computer\HKEY_CURRENT_USER\Software\Company\VclAppWSClient\1.0\frmMain
+```
+
+The client also sends an `Origin` header during the WebSocket upgrade. This is
+important when talking to the GUI server demo, because the server bridge uses a
+loopback origin allow-list.
+
+### `Demo/GUI/WebSocketServer`
+
+`WebSocketServer` is a VCL WebBroker/DataSnap server demo. It uses
+`TIdHTTPWebSocketEnabledWebBrokerBridge` and the `WebSockets` unit to serve a
+normal WebBroker application and a WebSocket endpoint from the same Indy HTTP
+server.
+
+![WebSocket server demo](assets/images/WebSocketServerDemo.png)
+
+The bridge intercepts requests for `/websocket`, creates a
+`SvcApp::WebSockets::Server::WebSocket`, and dispatches received WebSocket
+messages to the demo form through `OnWebSocketMessageReceived`. Other requests
+continue through the inherited WebBroker bridge.
+
+The server calls `ConfigureLoopbackHandshake(Port)` before activation. This
+allows loopback origins such as `http://localhost:<port>` and
+`http://127.0.0.1:<port>`, and rejects unsupported WebSocket extensions.
 
 ### `HandshakeOptions`
 
@@ -492,7 +589,7 @@ AThread->Connection->Disconnect();
 using namespace SvcApp::WebSockets;
 
 auto HTTP = std::make_unique<TIdHTTP>( nullptr );
-Client::WebSocket WS( *HTTP, _D( "ws://example.com/chat" ) );
+Client::WebSocket WS( *HTTP, _D( "http://example.com/chat" ) );
 
 WS.SendFrame( _D( "hello" ) );
 
@@ -505,6 +602,196 @@ if ( WS.ReadTextFrame( 10000, Text, CloseText, CloseReason ) ) {
 }
 
 WS.SendCloseFrame( CloseStatus::Normal, _D( "done" ) );
+```
+
+## Console Application Examples
+
+The following examples are complete `main.cpp` files for C++Builder console
+applications. They assume `WebSockets.h` and `WebSockets.cpp` have been added
+to the project.
+
+The examples use a plain HTTP endpoint that is upgraded to WebSocket. With this
+library's Indy client wrapper, pass an `http://` URL to `TIdHTTP`; the wrapper
+adds the WebSocket upgrade headers before calling `TIdHTTP::Get`. For TLS, use
+`https://` and configure the appropriate Indy SSL IO handler before opening the
+connection.
+
+For new RAD Studio console projects, use the Unicode `TCHAR` setting so
+`_TCHAR` maps to `wchar_t`. The examples use `_tmain`, `_TCHAR`, `_ttoi`, and
+wide `String::c_str()` output, matching the repository's bcc64x console test
+projects. If a project is intentionally configured with narrow `TCHAR`, either
+switch it to Unicode or replace the entry point with a narrow `main` signature
+and convert command-line arguments explicitly.
+
+### Echo Server with `TIdHTTPServer`
+
+This console application starts a WebSocket echo server on
+`ws://127.0.0.1:9001/`. It accepts WebSocket upgrade requests, echoes text and
+binary messages, and replies to the peer's close frame before disconnecting.
+
+```cpp
+#include <System.SysUtils.hpp>
+#include <tchar.h>
+#include <cstdio>
+#include <IdContext.hpp>
+#include <IdCustomHTTPServer.hpp>
+#include <IdHTTPServer.hpp>
+
+#include "WebSockets.h"
+
+class TEchoServer final : public TObject {
+public:
+    void __fastcall CommandGet(
+        Idcontext::TIdContext* AContext,
+        Idcustomhttpserver::TIdHTTPRequestInfo* ARequestInfo,
+        Idcustomhttpserver::TIdHTTPResponseInfo* AResponseInfo )
+    {
+        using namespace SvcApp::WebSockets;
+
+        Server::HandshakeOptions Options;
+        Options.RejectExtensions = true;
+
+        Server::WebSocket WS(
+            AContext,
+            ARequestInfo,
+            AResponseInfo,
+            &Options
+        );
+
+        if ( !WS.IsWebSocket() ) {
+            AResponseInfo->ResponseNo = 400;
+            AResponseInfo->ContentText = _D( "WebSocket connections only" );
+            return;
+        }
+
+        Opcode Type;
+        TBytes Data;
+        CloseStatus CloseReason { CloseStatus::Normal };
+        String CloseText;
+
+        try {
+            while ( WS.ReadMessage(
+                        Type,
+                        Data,
+                        CloseReason,
+                        CloseText,
+                        30000 ) )
+            {
+                switch ( Type ) {
+                    case Opcode::Text:
+                    case Opcode::Binary:
+                        WS.SendFrame( Type, Data, true );
+                        break;
+
+                    default:
+                        break;
+                }
+            }
+
+            WS.SendCloseFrame( CloseReason, CloseText );
+        }
+        catch ( Exception const & E ) {
+            std::printf( "WebSocket error: %ls\n", E.Message.c_str() );
+        }
+        catch ( ... ) {
+        }
+
+        AContext->Connection->Disconnect();
+    }
+};
+
+int _tmain( int argc, _TCHAR* argv[] )
+{
+    int Port = 9001;
+    if ( argc > 1 ) {
+        Port = _ttoi( argv[1] );
+    }
+
+    auto Handler = new TEchoServer();
+    auto Server = new TIdHTTPServer( nullptr );
+
+    try {
+        Server->OnCommandGet = Handler->CommandGet;
+        Server->DefaultPort = Port;
+        Server->Active = true;
+
+        std::printf(
+            "WebSocket echo server listening on ws://127.0.0.1:%d/\n"
+            "Press Enter to stop.\n",
+            Port
+        );
+        std::getchar();
+
+        Server->Active = false;
+    }
+    catch ( Exception const & E ) {
+        std::printf( "Failed: %ls\n", E.Message.c_str() );
+    }
+
+    delete Server;
+    delete Handler;
+
+    return 0;
+}
+```
+
+### Client with `TIdHTTP`
+
+This console application connects to the echo server above, sends one text
+message, reads the echoed reply, and closes the WebSocket cleanly. It uses an
+`http://` URL because `Client::WebSocket` performs the WebSocket upgrade through
+`TIdHTTP`.
+
+```cpp
+#include <System.SysUtils.hpp>
+#include <tchar.h>
+#include <cstdio>
+#include <IdHTTP.hpp>
+
+#include <memory>
+
+#include "WebSockets.h"
+
+int _tmain( int argc, _TCHAR* argv[] )
+{
+    try {
+        using namespace SvcApp::WebSockets;
+
+        String URL = _D( "http://127.0.0.1:9001/" );
+        if ( argc > 1 ) {
+            URL = argv[1];
+        }
+
+        auto HTTP = std::make_unique<TIdHTTP>( nullptr );
+        Client::WebSocket WS( *HTTP, URL );
+
+        String const Message = _D( "Hello from a C++Builder console client" );
+        WS.SendFrame( Message );
+
+        String Reply;
+        String CloseText;
+        CloseStatus CloseReason { CloseStatus::Normal };
+
+        if ( WS.ReadTextFrame( 10000, Reply, CloseText, CloseReason ) ) {
+            std::printf( "Received: %ls\n", Reply.c_str() );
+        }
+        else {
+            std::printf(
+                "Closed while waiting for reply: %d %ls\n",
+                static_cast<int>( CloseReason ),
+                CloseText.c_str()
+            );
+        }
+
+        WS.SendCloseFrame( CloseStatus::Normal, _D( "done" ) );
+    }
+    catch ( Exception const & E ) {
+        std::printf( "Failed: %ls\n", E.Message.c_str() );
+        return 1;
+    }
+
+    return 0;
+}
 ```
 
 ## Notes for Maintainers
