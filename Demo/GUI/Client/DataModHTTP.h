@@ -17,6 +17,8 @@
 #include <IdSSLOpenSSL.hpp>
 #include <IdTCPClient.hpp>
 #include <IdTCPConnection.hpp>
+#include <IdCTypes.hpp>
+#include <IdSSLOpenSSLHeaders.hpp>
 
 class TfrmMain;
 

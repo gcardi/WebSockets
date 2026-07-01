@@ -1,12 +1,18 @@
 ﻿<Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
     <PropertyGroup>
-        <ProjectGuid>{70E32903-E05E-4913-98D1-8BCE56752827}</ProjectGuid>
+        <ProjectGuid>{90D09529-B373-4071-8969-61AFC58169EB}</ProjectGuid>
     </PropertyGroup>
     <ItemGroup>
-        <Projects Include="GUI\WebSocketClient\WebSocketClient.cbproj">
+        <Projects Include="Console\Client\ConsoleClient.cbproj">
             <Dependencies/>
         </Projects>
-        <Projects Include="GUI\WebSocketServer\WebSocketServer.cbproj">
+        <Projects Include="Console\Server\ConsoleServer.cbproj">
+            <Dependencies/>
+        </Projects>
+        <Projects Include="GUI\Client\GUIClient.cbproj">
+            <Dependencies/>
+        </Projects>
+        <Projects Include="GUI\Server\GUIServer.cbproj">
             <Dependencies/>
         </Projects>
     </ItemGroup>
@@ -17,32 +23,50 @@
             <Default.Personality/>
         </BorlandProject>
     </ProjectExtensions>
-    <Target Name="WebSocketClient">
-        <MSBuild Projects="GUI\WebSocketClient\WebSocketClient.cbproj"/>
+    <Target Name="ConsoleClient">
+        <MSBuild Projects="Console\Client\ConsoleClient.cbproj"/>
     </Target>
-    <Target Name="WebSocketClient:Clean">
-        <MSBuild Projects="GUI\WebSocketClient\WebSocketClient.cbproj" Targets="Clean"/>
+    <Target Name="ConsoleClient:Clean">
+        <MSBuild Projects="Console\Client\ConsoleClient.cbproj" Targets="Clean"/>
     </Target>
-    <Target Name="WebSocketClient:Make">
-        <MSBuild Projects="GUI\WebSocketClient\WebSocketClient.cbproj" Targets="Make"/>
+    <Target Name="ConsoleClient:Make">
+        <MSBuild Projects="Console\Client\ConsoleClient.cbproj" Targets="Make"/>
     </Target>
-    <Target Name="WebSocketServer">
-        <MSBuild Projects="GUI\WebSocketServer\WebSocketServer.cbproj"/>
+    <Target Name="ConsoleServer">
+        <MSBuild Projects="Console\Server\ConsoleServer.cbproj"/>
     </Target>
-    <Target Name="WebSocketServer:Clean">
-        <MSBuild Projects="GUI\WebSocketServer\WebSocketServer.cbproj" Targets="Clean"/>
+    <Target Name="ConsoleServer:Clean">
+        <MSBuild Projects="Console\Server\ConsoleServer.cbproj" Targets="Clean"/>
     </Target>
-    <Target Name="WebSocketServer:Make">
-        <MSBuild Projects="GUI\WebSocketServer\WebSocketServer.cbproj" Targets="Make"/>
+    <Target Name="ConsoleServer:Make">
+        <MSBuild Projects="Console\Server\ConsoleServer.cbproj" Targets="Make"/>
+    </Target>
+    <Target Name="GUIClient">
+        <MSBuild Projects="GUI\Client\GUIClient.cbproj"/>
+    </Target>
+    <Target Name="GUIClient:Clean">
+        <MSBuild Projects="GUI\Client\GUIClient.cbproj" Targets="Clean"/>
+    </Target>
+    <Target Name="GUIClient:Make">
+        <MSBuild Projects="GUI\Client\GUIClient.cbproj" Targets="Make"/>
+    </Target>
+    <Target Name="GUIServer">
+        <MSBuild Projects="GUI\Server\GUIServer.cbproj"/>
+    </Target>
+    <Target Name="GUIServer:Clean">
+        <MSBuild Projects="GUI\Server\GUIServer.cbproj" Targets="Clean"/>
+    </Target>
+    <Target Name="GUIServer:Make">
+        <MSBuild Projects="GUI\Server\GUIServer.cbproj" Targets="Make"/>
     </Target>
     <Target Name="Build">
-        <CallTarget Targets="WebSocketClient;WebSocketServer"/>
+        <CallTarget Targets="ConsoleClient;ConsoleServer;GUIClient;GUIServer"/>
     </Target>
     <Target Name="Clean">
-        <CallTarget Targets="WebSocketClient:Clean;WebSocketServer:Clean"/>
+        <CallTarget Targets="ConsoleClient:Clean;ConsoleServer:Clean;GUIClient:Clean;GUIServer:Clean"/>
     </Target>
     <Target Name="Make">
-        <CallTarget Targets="WebSocketClient:Make;WebSocketServer:Make"/>
+        <CallTarget Targets="ConsoleClient:Make;ConsoleServer:Make;GUIClient:Make;GUIServer:Make"/>
     </Target>
     <Import Project="$(BDS)\Bin\CodeGear.Group.Targets" Condition="Exists('$(BDS)\Bin\CodeGear.Group.Targets')"/>
 </Project>

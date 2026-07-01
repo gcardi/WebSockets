@@ -1,5 +1,4 @@
 object dmHTTP: TdmHTTP
-  OldCreateOrder = False
   Height = 150
   Width = 286
   object IdHTTP1: TIdHTTP
