@@ -5,6 +5,7 @@
 
 #include <IdHashSHA.hpp>
 #include <IdCoderMIME.hpp>
+#include <IdURI.hpp>
 
 #include <memory>
 
@@ -18,6 +19,38 @@
 using std::make_unique;
 
 using Anafestica::TFileVersionInfo;
+
+namespace {
+
+String BuildOriginHeader( String const & URL )
+{
+    auto URI = make_unique<Iduri::TIdURI>( URL );
+
+    if ( URI->Protocol.IsEmpty() || URI->Host.IsEmpty() ) {
+        throw Exception(
+            _D( "Cannot build Origin header from URL: %s" ),
+            ARRAYOFCONST( ( URL ) )
+        );
+    }
+
+    String Origin = URI->Protocol + _D( "://" ) + URI->Host;
+    if ( !URI->Port.IsEmpty() ) {
+        Origin += _D( ":" ) + URI->Port;
+    }
+    return Origin;
+}
+
+std::unique_ptr<Idheaderlist::TIdHeaderList> BuildWebSocketHeaders(
+    String const & URL )
+{
+    auto Headers = make_unique<Idheaderlist::TIdHeaderList>(
+        Idglobalprotocols::QuoteHTTP
+    );
+    Headers->Values[_D( "Origin" )] = BuildOriginHeader( URL );
+    return Headers;
+}
+
+} // anonymous namespace
 
 //---------------------------------------------------------------------------
 #pragma package(smart_init)
@@ -68,7 +101,7 @@ void TfrmMain::Destroy()
 
 String TfrmMain::GetModuleFileName()
 {
-    return GetModuleName( reinterpret_cast<unsigned>( HInstance ) );
+    return GetModuleName( reinterpret_cast<NativeUInt>( HInstance ) );
 }
 //---------------------------------------------------------------------------
 
@@ -193,7 +226,10 @@ void __fastcall TfrmMain::actWebSocketsSendSFTextExecute(TObject *Sender)
 {
     try {
         auto HTTP = make_unique<TdmHTTP>( nullptr, *this );
-        SvcApp::WebSockets::Client::WebSocket WS{ *HTTP->IdHTTP1, BaseURL };
+        auto Headers = BuildWebSocketHeaders( BaseURL );
+        SvcApp::WebSockets::Client::WebSocket WS{
+            *HTTP->IdHTTP1, BaseURL, Headers.get()
+        };
 
         LogMessage(
             _D( "Send: %s\n" ),
@@ -234,7 +270,10 @@ void __fastcall TfrmMain::actWebSocketsSendSFBinaryExecute(TObject *Sender)
         Buffer.Length = SendBinary.Length() / 2;
         HexToBin( SendBinary.c_str(), &Buffer[0], Buffer.Length );
         auto HTTP = make_unique<TdmHTTP>( nullptr, *this );
-        SvcApp::WebSockets::Client::WebSocket WS{ *HTTP->IdHTTP1, BaseURL };
+        auto Headers = BuildWebSocketHeaders( BaseURL );
+        SvcApp::WebSockets::Client::WebSocket WS{
+            *HTTP->IdHTTP1, BaseURL, Headers.get()
+        };
         WS.SendFrame( Buffer );
         WS.SendCloseFrame( SvcApp::WebSockets::CloseStatus::Normal, _D( "Bai!" ) );
     }
@@ -265,7 +304,10 @@ void __fastcall TfrmMain::actWebSocketsSendMFTextExecute(TObject *Sender)
 {
     try {
         auto HTTP = make_unique<TdmHTTP>( nullptr, *this );
-        SvcApp::WebSockets::Client::WebSocket WS{ *HTTP->IdHTTP1, BaseURL };
+        auto Headers = BuildWebSocketHeaders( BaseURL );
+        SvcApp::WebSockets::Client::WebSocket WS{
+            *HTTP->IdHTTP1, BaseURL, Headers.get()
+        };
         SvcApp::WebSockets::CloseStatus CloseReason;
         String CloseText;
 

@@ -1,17 +1,11 @@
-//---------------------------------------------------------------------------
-
-#include <vcl.h>
+//----------------------------------------------------------------------------
+#include <System.SysUtils.hpp>
+#include <System.StrUtils.hpp>
 #pragma hdrstop
 
 #include "ServerMethodsUnit1.h"
-//---------------------------------------------------------------------------
+//----------------------------------------------------------------------------
 #pragma package(smart_init)
-#pragma resource "*.dfm"
-//---------------------------------------------------------------------------
-__fastcall TServerMethods1::TServerMethods1(TComponent* Owner)
-    : TDataModule(Owner)
-{
-}
 //----------------------------------------------------------------------------
 System::UnicodeString TServerMethods1::EchoString(System::UnicodeString value)
 {

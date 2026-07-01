@@ -1,5 +1,4 @@
 object WebModule1: TWebModule1
-  OldCreateOrder = False
   OnCreate = WebModuleCreate
   Actions = <
     item
@@ -25,8 +24,9 @@ object WebModule1: TWebModule1
     Left = 96
     Top = 11
   end
-  object DSRESTWebDispatcher1: TDSRESTWebDispatcher
+  object DSHTTPWebDispatcher1: TDSHTTPWebDispatcher
     Server = DSServer1
+    Filters = <>
     WebDispatch.PathInfo = 'datasnap*'
     Left = 96
     Top = 75

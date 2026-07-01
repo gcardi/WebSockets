@@ -2,10 +2,11 @@
 //---------------------------------------------------------------------------
 
 #include <vcl.h>
-#pragma hdrstop
+#ifdef _WIN32
 #include <tchar.h>
+#endif
+#pragma hdrstop
 #include <Web.WebReq.hpp>
-
 #ifdef USEPACKAGES
 #pragma link "IndySystem.bpi"
 #pragma link "IndyCore.bpi"
@@ -15,9 +16,9 @@
 #pragma comment(lib, "IndyCore")
 #pragma comment(lib, "IndyProtocols")
 #endif
+#pragma link "IdHTTPWebBrokerBridge"
 
 //---------------------------------------------------------------------------
-USEFORM("ServerMethodsUnit1.cpp", ServerMethods1); /* TDataModule: File Type */
 USEFORM("WebModuleUnit1.cpp", WebModule1); /* TWebModule: File Type */
 USEFORM("FormUnit1.cpp", Form1);
 //---------------------------------------------------------------------------

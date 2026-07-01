@@ -2,7 +2,7 @@
 //
 //               Delphi DataSnap Framework
 //
-// Copyright(c) 1995-2011 Embarcadero Technologies, Inc.
+// Copyright(c) 1995-2026 Embarcadero Technologies, Inc.
 //
 //*******************************************************
 

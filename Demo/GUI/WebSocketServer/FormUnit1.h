@@ -10,6 +10,7 @@
 #include <Vcl.Forms.hpp>
 #include <Vcl.AppEvnts.hpp>
 #include <Vcl.ComCtrls.hpp>
+#include <Vcl.ExtCtrls.hpp>
 
 #include <atomic>
 
@@ -28,6 +29,7 @@ __published:    // IDE-managed Components
     TLabel *Label1;
     TRichEdit *RichEdit1;
     TCheckBox *cboxLogFlow;
+    TPanel *Panel1;
     void __fastcall ButtonStartClick(TObject *Sender);
     void __fastcall ButtonStopClick(TObject *Sender);
     void __fastcall ButtonOpenBrowserClick(TObject *Sender);

@@ -26,6 +26,9 @@
  */ 
 function convertStringToBase64(string) 
 { 
+  if (typeof window.btoa === "function") {
+    return window.btoa(unescape(encodeURIComponent(string)));
+  }
   var out='', charCode=0, i=0, length=string.length; 
   var puffer=[];
   var base64EncodeChars ="ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/=";

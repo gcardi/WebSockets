@@ -3,10 +3,10 @@
         <ProjectGuid>{70E32903-E05E-4913-98D1-8BCE56752827}</ProjectGuid>
     </PropertyGroup>
     <ItemGroup>
-        <Projects Include="WebSocketClient\WebSocketClient.cbproj">
+        <Projects Include="GUI\WebSocketClient\WebSocketClient.cbproj">
             <Dependencies/>
         </Projects>
-        <Projects Include="WebSocketsServer\WebSocketsServer.cbproj">
+        <Projects Include="GUI\WebSocketServer\WebSocketServer.cbproj">
             <Dependencies/>
         </Projects>
     </ItemGroup>
@@ -18,31 +18,31 @@
         </BorlandProject>
     </ProjectExtensions>
     <Target Name="WebSocketClient">
-        <MSBuild Projects="WebSocketClient\WebSocketClient.cbproj"/>
+        <MSBuild Projects="GUI\WebSocketClient\WebSocketClient.cbproj"/>
     </Target>
     <Target Name="WebSocketClient:Clean">
-        <MSBuild Projects="WebSocketClient\WebSocketClient.cbproj" Targets="Clean"/>
+        <MSBuild Projects="GUI\WebSocketClient\WebSocketClient.cbproj" Targets="Clean"/>
     </Target>
     <Target Name="WebSocketClient:Make">
-        <MSBuild Projects="WebSocketClient\WebSocketClient.cbproj" Targets="Make"/>
+        <MSBuild Projects="GUI\WebSocketClient\WebSocketClient.cbproj" Targets="Make"/>
     </Target>
-    <Target Name="WebSocketsServer">
-        <MSBuild Projects="WebSocketsServer\WebSocketsServer.cbproj"/>
+    <Target Name="WebSocketServer">
+        <MSBuild Projects="GUI\WebSocketServer\WebSocketServer.cbproj"/>
     </Target>
-    <Target Name="WebSocketsServer:Clean">
-        <MSBuild Projects="WebSocketsServer\WebSocketsServer.cbproj" Targets="Clean"/>
+    <Target Name="WebSocketServer:Clean">
+        <MSBuild Projects="GUI\WebSocketServer\WebSocketServer.cbproj" Targets="Clean"/>
     </Target>
-    <Target Name="WebSocketsServer:Make">
-        <MSBuild Projects="WebSocketsServer\WebSocketsServer.cbproj" Targets="Make"/>
+    <Target Name="WebSocketServer:Make">
+        <MSBuild Projects="GUI\WebSocketServer\WebSocketServer.cbproj" Targets="Make"/>
     </Target>
     <Target Name="Build">
-        <CallTarget Targets="WebSocketClient;WebSocketsServer"/>
+        <CallTarget Targets="WebSocketClient;WebSocketServer"/>
     </Target>
     <Target Name="Clean">
-        <CallTarget Targets="WebSocketClient:Clean;WebSocketsServer:Clean"/>
+        <CallTarget Targets="WebSocketClient:Clean;WebSocketServer:Clean"/>
     </Target>
     <Target Name="Make">
-        <CallTarget Targets="WebSocketClient:Make;WebSocketsServer:Make"/>
+        <CallTarget Targets="WebSocketClient:Make;WebSocketServer:Make"/>
     </Target>
     <Import Project="$(BDS)\Bin\CodeGear.Group.Targets" Condition="Exists('$(BDS)\Bin\CodeGear.Group.Targets')"/>
 </Project>

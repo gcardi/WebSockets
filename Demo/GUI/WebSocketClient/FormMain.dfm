@@ -10,11 +10,9 @@ object frmMain: TfrmMain
   Font.Height = -11
   Font.Name = 'Tahoma'
   Font.Style = []
-  OldCreateOrder = False
   DesignSize = (
     635
     381)
-  PixelsPerInch = 96
   TextHeight = 13
   object Label1: TLabel
     Left = 509
@@ -108,7 +106,6 @@ object frmMain: TfrmMain
         ScrollBars = ssBoth
         TabOrder = 0
         WordWrap = False
-        Zoom = 100
       end
     end
     object tbshtResponse: TTabSheet
@@ -131,7 +128,6 @@ object frmMain: TfrmMain
         ScrollBars = ssBoth
         TabOrder = 0
         WordWrap = False
-        Zoom = 100
       end
     end
     object tbshtBody: TTabSheet
@@ -154,7 +150,6 @@ object frmMain: TfrmMain
         ScrollBars = ssBoth
         TabOrder = 0
         WordWrap = False
-        Zoom = 100
       end
     end
   end

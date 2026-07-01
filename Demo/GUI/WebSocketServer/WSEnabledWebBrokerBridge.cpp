@@ -5,7 +5,6 @@
 
 #include <IdSSL.hpp>
 
-//#include "Globals.h"
 #include "WSEnabledWebBrokerBridge.h"
 
 #pragma link "IdHTTPWebBrokerBridge"
@@ -22,15 +21,15 @@ using WebSockets::Opcode;
 
 void TIdHTTPWebSocketEnabledWebBrokerBridge::ConfigureLoopbackHandshake( int Port )
 {
-    allowedOrigins_.Clear();
+    allowedOrigins_->Clear();
 
     auto const PortText = IntToStr( Port );
-    allowedOrigins_.Add( _D( "http://localhost:" ) + PortText );
-    allowedOrigins_.Add( _D( "http://127.0.0.1:" ) + PortText );
-    allowedOrigins_.Add( _D( "http://[::1]:" ) + PortText );
-    allowedOrigins_.Add( _D( "https://localhost:" ) + PortText );
-    allowedOrigins_.Add( _D( "https://127.0.0.1:" ) + PortText );
-    allowedOrigins_.Add( _D( "https://[::1]:" ) + PortText );
+    allowedOrigins_->Add( _D( "http://localhost:" ) + PortText );
+    allowedOrigins_->Add( _D( "http://127.0.0.1:" ) + PortText );
+    allowedOrigins_->Add( _D( "http://[::1]:" ) + PortText );
+    allowedOrigins_->Add( _D( "https://localhost:" ) + PortText );
+    allowedOrigins_->Add( _D( "https://127.0.0.1:" ) + PortText );
+    allowedOrigins_->Add( _D( "https://[::1]:" ) + PortText );
 }
 
 void __fastcall TIdHTTPWebSocketEnabledWebBrokerBridge::DoCommandGet(
@@ -46,7 +45,7 @@ void __fastcall TIdHTTPWebSocketEnabledWebBrokerBridge::DoCommandGet(
         }
     }
 
-    if ( ARequestInfo->Document != _T( "/websocket" ) ) {  // <---
+    if ( ARequestInfo->Document != _D( "/websocket" ) ) {  // <---
         inherited::DoCommandGet( AThread, ARequestInfo, AResponseInfo );
     }
     else {

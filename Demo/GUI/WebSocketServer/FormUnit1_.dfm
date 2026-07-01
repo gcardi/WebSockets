@@ -2,16 +2,15 @@ object Form1: TForm1
   Left = 271
   Top = 114
   Caption = 'Form1'
-  ClientHeight = 513
-  ClientWidth = 594
+  ClientHeight = 235
+  ClientWidth = 399
   Color = clBtnFace
   Font.Charset = DEFAULT_CHARSET
   Font.Color = clWindowText
   Font.Height = -11
   Font.Name = 'Tahoma'
   Font.Style = []
-  OldCreateOrder = False
-  PixelsPerInch = 96
+  OnCreate = FormCreate
   TextHeight = 13
   object Label1: TLabel
     Left = 24
@@ -54,35 +53,6 @@ object Form1: TForm1
     Caption = 'Open Browser'
     TabOrder = 3
     OnClick = ButtonOpenBrowserClick
-  end
-  object RichEdit1: TRichEdit
-    AlignWithMargins = True
-    Left = 3
-    Top = 160
-    Width = 588
-    Height = 350
-    Align = alBottom
-    Font.Charset = ANSI_CHARSET
-    Font.Color = clWindowText
-    Font.Height = -11
-    Font.Name = 'Consolas'
-    Font.Style = []
-    Lines.Strings = (
-      'RichEdit1')
-    ParentFont = False
-    TabOrder = 4
-    Zoom = 100
-  end
-  object cboxLogFlow: TCheckBox
-    Left = 152
-    Top = 116
-    Width = 97
-    Height = 17
-    Caption = 'Log Flow'
-    Checked = True
-    State = cbChecked
-    TabOrder = 5
-    OnClick = cboxLogFlowClick
   end
   object ApplicationEvents1: TApplicationEvents
     OnIdle = ApplicationEvents1Idle

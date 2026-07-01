@@ -109,50 +109,6 @@ function onReverseStringClick()
   valueField.value = s.result;
 }
 
-function onWST()
-{
-    var connection = new WebSocket('ws://localhost:8080/websocket');
-
-    connection.onmessage = function( event ) {
-        valueField.value = event.data;
-        connection.close();
-    }
-    
-    connection.onopen = function () {
-          connection.send('ABCD');
-		  connection.close();
-    }
-}
-
-var myIntervalTimer;
-var wsConn;
-var cnt = 0;
-
-function myWSTimer()
-{
-    wsConn.send( cnt.toString() );
-    ++cnt;
-}
-
-function onStartTWST()
-{
-    wsConn = new WebSocket('ws://localhost:8080/websocket');
-
-    wsConn.onmessage = function( event ) {
-        valueField.value = event.data;
-    }
-
-    myIntervalTimer = setInterval( myWSTimer, 500 );
-}
-
-function onStopTWST()
-{
-    window.clearInterval(myIntervalTimer)
-    
-    wsConn.close();
-}
-
-
 </script>
 </head>
 <body onload="onLoad()">
@@ -181,13 +137,6 @@ function onStopTWST()
         <tr>
           <td><input id="valueField" class="loginField" type="text" value="A B C" /></td>
           <td><button onclick='javascript:onReverseStringClick();'>ReverseString</button></td>
-        </tr>
-        <tr>
-          <td><button onclick='javascript:onWST();'>Web Socket Test</button></td>
-          <tr>
-            <td><button onclick='javascript:onStartTWST();'>Start Timed Web Socket Test</button></td>
-            <td><button onclick='javascript:onStopTWST();'>Stop Timed Web Socket Test</button></td>
-          </tr>
         </tr>
       </table>
     </div>

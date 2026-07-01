@@ -3,7 +3,10 @@
 #ifndef WSEnabledWebBrokerBridgeH
 #define WSEnabledWebBrokerBridgeH
 
+#include <System.hpp>
 #include <IdHTTPWebBrokerBridge.hpp>
+
+#include <memory>
 
 #include "WebSockets.h"
 
@@ -71,9 +74,9 @@ private:
     TIdHTTPWSCommandGetEvent onCommandGet_ { nullptr };
     TIdHTTPWSFrameReceivedEvent onWebSocketFrameReceived_ { nullptr };
     TIdHTTPWSMessageReceivedEvent onWebSocketMessageReceived_ { nullptr };
-    TStringList allowedOrigins_;
+    std::unique_ptr<TStringList> allowedOrigins_ { std::make_unique<TStringList>() };
     WebSockets::Server::HandshakeOptions handshakeOptions_ {
-        &allowedOrigins_, nullptr, false, true
+        allowedOrigins_.get(), nullptr, false, true
     };
 };
 
