@@ -59,22 +59,33 @@ For a deeper API reference, implementation notes, and Mermaid diagrams, see
 
 ---
 
-## GUI Demos
+## Demos
 
-The [`Demo/GUI`](Demo/GUI/) folder contains two RAD Studio 13 / bcc64x VCL
-demo projects:
+The [`Demo`](Demo/) folder is split by user interface style:
 
-- [`WebSocketClient`](Demo/GUI/WebSocketClient/) is a VCL client demo that uses
-  `SvcApp::WebSockets::Client::WebSocket` with `TIdHTTP`.
-- [`WebSocketServer`](Demo/GUI/WebSocketServer/) is a WebBroker/DataSnap server
-  demo that uses `SvcApp::WebSockets::Server::WebSocket` through the
+- [`Demo/Console/Client`](Demo/Console/Client/) contains `ConsoleClient`, a
+  bcc64x console client that uses `TIdHTTP` and exercises UTF-8 text payloads.
+- [`Demo/Console/Server`](Demo/Console/Server/) contains `ConsoleServer`, a
+  pure console `TIdHTTPServer` echo server.
+- [`Demo/GUI/Client`](Demo/GUI/Client/) contains `GUIClient`, a VCL client demo
+  that uses `SvcApp::WebSockets::Client::WebSocket` with `TIdHTTP`.
+- [`Demo/GUI/Server`](Demo/GUI/Server/) contains `GUIServer`, a
+  WebBroker/DataSnap server demo that uses
+  `SvcApp::WebSockets::Server::WebSocket` through the
   `TIdHTTPWebSocketEnabledWebBrokerBridge` adapter.
+
+[`Demo/AllDemos.groupproj`](Demo/AllDemos.groupproj) groups all four demo
+projects for RAD Studio.
+
+Both console demos embed a UTF-8 application manifest and initialize the
+console/CRT for UTF-8 output, so Unicode WebSocket text such as emoji, accented
+characters, CJK text, and mathematical symbols is displayed correctly.
 
 The client demo depends on
 [Anafestica](https://github.com/gcardi/Anafestica). Install Anafestica in the
 appropriate folder under `$(BDSCOMMONDIR)` as described by that project so the
-demo include/library paths resolve cleanly. Anafestica is used here to persist
-the client parameters under:
+GUI client include/library paths resolve cleanly. Anafestica is used here to
+persist the GUI client parameters under:
 
 ```text
 Computer\HKEY_CURRENT_USER\Software\Company\VclAppWSClient\1.0\frmMain
@@ -101,7 +112,7 @@ reading or writing.
 
 For WebBroker/DataSnap servers based on `TIdHTTPWebBrokerBridge`, use the
 demo's `TIdHTTPWebSocketEnabledWebBrokerBridge` adapter from
-`Demo/GUI/WebSocketServer/WSEnabledWebBrokerBridge.*`. That bridge intercepts
+`Demo/GUI/Server/WSEnabledWebBrokerBridge.*`. That bridge intercepts
 the WebSocket endpoint, performs the upgrade, and exposes WebSocket message and
 frame events while letting normal HTTP/WebBroker requests continue through the
 inherited bridge.

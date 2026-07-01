@@ -13,7 +13,7 @@ WebBroker/DataSnap servers need a small adapter around
 `TIdHTTPWebBrokerBridge`, because normal WebBroker request dispatch does not by
 itself own the long-running WebSocket read loop. The demo provides that adapter
 as `TIdHTTPWebSocketEnabledWebBrokerBridge` in
-`Demo/GUI/WebSocketServer/WSEnabledWebBrokerBridge.*`.
+`Demo/GUI/Server/WSEnabledWebBrokerBridge.*`.
 
 ## Module Layout
 
@@ -365,14 +365,50 @@ It also calls `ConfigureLoopbackHandshake(Port)` before activating the server,
 which prepares loopback origins and configures the bridge's default handshake
 options to reject unsupported extensions.
 
-## GUI Demo Projects
+## Demo Projects
 
-The `Demo/GUI` folder contains two VCL projects that exercise the library from
-both sides of a local WebSocket connection.
+The `Demo` folder is organized by user interface style. `Demo/Console` contains
+small console applications that focus on the WebSocket API itself, while
+`Demo/GUI` contains VCL/WebBroker projects that demonstrate interactive client
+and server applications. `Demo/AllDemos.groupproj` groups all four projects.
 
-### `Demo/GUI/WebSocketClient`
+### `Demo/Console/Client`
 
-`WebSocketClient` is a VCL client demo built around `TIdHTTP` and
+`ConsoleClient` is a bcc64x console client built around `TIdHTTP` and
+`SvcApp::WebSockets::Client::WebSocket`. It sends a UTF-8 text message to the
+configured endpoint and prints the echoed reply. By default it connects to
+`http://127.0.0.1:8080/websocket`; pass a URL as the first command-line
+argument to use another endpoint.
+
+The project uses the same console UTF-8 setup as the server demo:
+
+- an embedded application manifest with `activeCodePage` set to `UTF-8`;
+- `_TCHARMapping` set to `wchar_t` in the project file;
+- `setlocale(LC_ALL, ".UTF-8")`;
+- `SetConsoleCP(CP_UTF8)` and `SetConsoleOutputCP(CP_UTF8)`.
+
+The client also sends an `Origin` header during the WebSocket upgrade. This is
+required by the console and GUI server demos because they use a loopback origin
+allow-list.
+
+### `Demo/Console/Server`
+
+`ConsoleServer` is a pure console `TIdHTTPServer` echo server. It serves a
+WebSocket endpoint at `/websocket`, constructs
+`SvcApp::WebSockets::Server::WebSocket` directly in `DoCommandGet`, reads
+complete text or binary messages, and sends the same payload back to the
+client.
+
+By default it listens on port `8080`; pass a port number as the first
+command-line argument to use another port. This is useful when the GUI server
+or another local server is already using `8080`.
+
+Like the console client, it embeds the UTF-8 manifest and initializes the
+console/CRT for UTF-8 output, so received Unicode text is logged correctly.
+
+### `Demo/GUI/Client`
+
+`GUIClient` is a VCL client demo built around `TIdHTTP` and
 `SvcApp::WebSockets::Client::WebSocket`. It can send single-frame text and
 binary messages, and it can also send fragmented text messages through
 `SendMessage`.
@@ -397,9 +433,9 @@ The client also sends an `Origin` header during the WebSocket upgrade. This is
 important when talking to the GUI server demo, because the server bridge uses a
 loopback origin allow-list.
 
-### `Demo/GUI/WebSocketServer`
+### `Demo/GUI/Server`
 
-`WebSocketServer` is a VCL WebBroker/DataSnap server demo. It uses
+`GUIServer` is a VCL WebBroker/DataSnap server demo. It uses
 `TIdHTTPWebSocketEnabledWebBrokerBridge` and the `WebSockets` unit to serve a
 normal WebBroker application and a WebSocket endpoint from the same Indy HTTP
 server.
